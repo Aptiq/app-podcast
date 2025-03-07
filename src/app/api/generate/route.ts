@@ -71,6 +71,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
     console.log("Début de la génération de transcription...");
     console.log("Source:", source.type, source.content.substring(0, 50) + "...");
     console.log("Paramètres:", JSON.stringify(params, null, 2));
+    console.log("Langue sélectionnée:", params.language);
     
     // Vérifier si la clé API OpenAI est configurée
     const openaiApiKey = apiConfig.openai;
@@ -87,27 +88,109 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
     });
     
     // Préparer le prompt pour la génération de transcription
-    const prompt = `
-    Génère un script de podcast entre deux personnes sur le sujet suivant:
+    // Adapter le prompt en fonction de la langue
+    let systemPrompt = "";
+    let userPrompt = "";
     
-    ${source.content}
-    
-    Format du script:
-    <Person1>Texte de la première personne</Person1>
-    <Person2>Texte de la deuxième personne</Person2>
-    
-    Détails du podcast:
-    - Nom du podcast: ${params.podcastName}
-    - Tagline: ${params.tagline}
-    - Premier intervenant: ${params.firstSpeaker}
-    - Second intervenant: ${params.secondSpeaker}
-    - Style: ${params.style}
-    - Langue: ${params.language}
-    - Niveau de créativité: ${params.creativity}
-    
-    Le script doit être naturel, avec des pauses, des hésitations et des expressions conversationnelles.
-    La longueur du script doit être d'environ ${params.length} mots.
-    `;
+    // Définir les prompts en fonction de la langue
+    switch (params.language) {
+      case 'fr':
+        systemPrompt = "Tu es un expert en création de podcasts. Tu dois générer un script de podcast naturel et engageant en français.";
+        userPrompt = `
+        Génère un script de podcast entre deux personnes sur le sujet suivant:
+        
+        ${source.content}
+        
+        Format du script:
+        <Person1>Texte de la première personne</Person1>
+        <Person2>Texte de la deuxième personne</Person2>
+        
+        Détails du podcast:
+        - Nom du podcast: ${params.podcastName}
+        - Tagline: ${params.tagline}
+        - Premier intervenant: ${params.firstSpeaker}
+        - Second intervenant: ${params.secondSpeaker}
+        - Style: ${params.style}
+        - Langue: français
+        - Niveau de créativité: ${params.creativity}
+        
+        Le script doit être naturel, avec des pauses, des hésitations et des expressions conversationnelles françaises.
+        La longueur du script doit être d'environ ${params.length} mots.
+        `;
+        break;
+      case 'en':
+        systemPrompt = "You are an expert podcast creator. You must generate a natural and engaging podcast script in English.";
+        userPrompt = `
+        Generate a podcast script between two people on the following topic:
+        
+        ${source.content}
+        
+        Script format:
+        <Person1>First person's text</Person1>
+        <Person2>Second person's text</Person2>
+        
+        Podcast details:
+        - Podcast name: ${params.podcastName}
+        - Tagline: ${params.tagline}
+        - First speaker: ${params.firstSpeaker}
+        - Second speaker: ${params.secondSpeaker}
+        - Style: ${params.style}
+        - Language: English
+        - Creativity level: ${params.creativity}
+        
+        The script should be natural, with pauses, hesitations, and conversational English expressions.
+        The script length should be approximately ${params.length} words.
+        `;
+        break;
+      case 'es':
+        systemPrompt = "Eres un experto creador de podcasts. Debes generar un guión de podcast natural y atractivo en español.";
+        userPrompt = `
+        Genera un guión de podcast entre dos personas sobre el siguiente tema:
+        
+        ${source.content}
+        
+        Formato del guión:
+        <Person1>Texto de la primera persona</Person1>
+        <Person2>Texto de la segunda persona</Person2>
+        
+        Detalles del podcast:
+        - Nombre del podcast: ${params.podcastName}
+        - Eslogan: ${params.tagline}
+        - Primer interlocutor: ${params.firstSpeaker}
+        - Segundo interlocutor: ${params.secondSpeaker}
+        - Estilo: ${params.style}
+        - Idioma: español
+        - Nivel de creatividad: ${params.creativity}
+        
+        El guión debe ser natural, con pausas, vacilaciones y expresiones conversacionales españolas.
+        La longitud del guión debe ser de aproximadamente ${params.length} palabras.
+        `;
+        break;
+      default:
+        // Pour les autres langues, utiliser l'anglais comme base et demander la traduction
+        systemPrompt = `You are an expert podcast creator. You must generate a natural and engaging podcast script in ${params.language} language.`;
+        userPrompt = `
+        Generate a podcast script between two people on the following topic in ${params.language} language:
+        
+        ${source.content}
+        
+        Script format:
+        <Person1>First person's text</Person1>
+        <Person2>Second person's text</Person2>
+        
+        Podcast details:
+        - Podcast name: ${params.podcastName}
+        - Tagline: ${params.tagline}
+        - First speaker: ${params.firstSpeaker}
+        - Second speaker: ${params.secondSpeaker}
+        - Style: ${params.style}
+        - Language: ${params.language}
+        - Creativity level: ${params.creativity}
+        
+        The script should be natural, with pauses, hesitations, and conversational expressions in ${params.language}.
+        The script length should be approximately ${params.length} words.
+        `;
+    }
     
     console.log("Prompt préparé, appel à l'API OpenAI...");
     
@@ -116,8 +199,8 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
       const response = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: "Tu es un expert en création de podcasts. Tu dois générer un script de podcast naturel et engageant." },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
         ],
         temperature: params.creativity,
         max_tokens: Math.min(4000, params.length * 4), // Estimation: 4 tokens par mot
@@ -227,88 +310,15 @@ async function generateAudio(transcript: string, params: GenerationParams, apiCo
 async function generateOpenAIAudio(transcript: string, params: GenerationParams, apiKey: string): Promise<string> {
   try {
     console.log("Initialisation du client OpenAI pour la génération audio...");
+    console.log("Voix sélectionnées - Premier intervenant:", params.firstSpeakerVoice, "Second intervenant:", params.secondSpeakerVoice);
     
     // Initialiser le client OpenAI
     const openai = new OpenAI({
       apiKey: apiKey,
     });
     
-    // Préparer le texte pour la synthèse vocale
-    console.log("Préparation du texte pour la synthèse vocale...");
-    
-    // Extraire les dialogues comme dans la fonction generateOpenAIAudio
-    console.log("Transcription reçue:", transcript.substring(0, 200) + "...");
-    
-    // Essayer d'extraire les dialogues au format <Person1>...</Person1>
-    const personRegex = /<Person(\d+)>(.*?)<\/Person\d+>/g;
-    let match;
-    const dialogues: { speaker: string; text: string; voice: string }[] = [];
-    let hasMatches = false;
-    
-    while ((match = personRegex.exec(transcript)) !== null) {
-      hasMatches = true;
-      const speakerNumber = parseInt(match[1]);
-      const text = match[2].trim();
-      
-      // Déterminer la voix à utiliser en fonction du numéro de l'intervenant
-      const speaker = speakerNumber === 1 ? params.firstSpeaker : params.secondSpeaker;
-      const voice = speakerNumber === 1 ? params.firstSpeakerVoice : params.secondSpeakerVoice;
-      
-      dialogues.push({ speaker, text, voice });
-    }
-    
-    // Si aucun dialogue n'a été trouvé au format <Person1>, essayer d'autres formats
-    if (!hasMatches) {
-      console.log("Aucun dialogue trouvé au format <Person1>. Essai d'autres formats...");
-      
-      // Format avec *Présentateur:* ou *Expert:*
-      const speakerRegex = /\*(Présentateur|Expert)\s*:\*\s*(.*?)(?=\*\w+\s*:\*|$)/g;
-      while ((match = speakerRegex.exec(transcript)) !== null) {
-        const speaker = match[1].trim();
-        const text = match[2].trim();
-        
-        if (text) {
-          // Déterminer la voix en fonction du rôle
-          const voice = speaker === params.firstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
-          dialogues.push({ speaker, text, voice });
-        }
-      }
-      
-      // Si toujours aucun dialogue, essayer un autre format
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé au format *Présentateur:*. Essai d'autres formats...");
-        
-        // Format avec Présentateur: ou Expert: (sans astérisques)
-        const simpleRegex = /(Présentateur|Expert)\s*:\s*(.*?)(?=(?:Présentateur|Expert)\s*:|$)/g;
-        while ((match = simpleRegex.exec(transcript)) !== null) {
-          const speaker = match[1].trim();
-          const text = match[2].trim();
-          
-          if (text) {
-            // Déterminer la voix en fonction du rôle
-            const voice = speaker === params.firstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
-            dialogues.push({ speaker, text, voice });
-          }
-        }
-      }
-      
-      // Si toujours aucun dialogue, utiliser le texte complet
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé dans les formats connus. Utilisation du texte complet.");
-        dialogues.push({ 
-          speaker: params.firstSpeaker, 
-          text: transcript.replace(/\*\*.*?\*\*/g, '').replace(/\*.*?\*/g, '').trim(),
-          voice: params.firstSpeakerVoice
-        });
-      }
-    }
-    
-    console.log(`Dialogues extraits: ${dialogues.length}`);
-    dialogues.forEach((d, i) => {
-      if (i < 3) {
-        console.log(`Dialogue ${i+1}: ${d.speaker} (${d.voice}) - ${d.text.substring(0, 50)}...`);
-      }
-    });
+    // Extraire les dialogues de la transcription
+    const dialogues = extractDialogues(transcript, params);
     
     // Vérifier si des dialogues ont été extraits
     if (dialogues.length === 0) {
@@ -345,6 +355,17 @@ async function generateOpenAIAudio(transcript: string, params: GenerationParams,
       for (let i = 0; i < dialogues.length; i++) {
         const dialogue = dialogues[i];
         
+        // Vérifier si le texte est vide
+        if (!dialogue.text || dialogue.text.trim().length === 0) {
+          console.log(`Dialogue ${i+1} vide, ignoré.`);
+          continue;
+        }
+        
+        console.log(`Traitement du dialogue ${i+1}/${dialogues.length}:`);
+        console.log(`- Intervenant: ${dialogue.speaker}`);
+        console.log(`- Voix: ${dialogue.voice}`);
+        console.log(`- Texte: ${dialogue.text.substring(0, 100)}...`);
+        
         // Diviser le texte en segments si nécessaire
         const textSegments: string[] = [];
         if (dialogue.text.length > MAX_CHARS_PER_SEGMENT) {
@@ -362,25 +383,53 @@ async function generateOpenAIAudio(transcript: string, params: GenerationParams,
         // Générer l'audio pour chaque segment
         for (let j = 0; j < textSegments.length; j++) {
           const segment = textSegments[j];
+          
+          // Vérifier si le segment est vide
+          if (!segment || segment.trim().length === 0) {
+            console.log(`Segment ${j+1} vide, ignoré.`);
+            continue;
+          }
+          
           console.log(`Génération du segment ${j+1}/${textSegments.length} pour le dialogue ${i+1}/${dialogues.length} (${segment.length} caractères)...`);
           
           // Utiliser l'API OpenAI pour générer l'audio
           console.log(`Appel à l'API OpenAI TTS avec la voix ${dialogue.voice}...`);
-          const mp3Response = await openai.audio.speech.create({
-            model: "tts-1",
-            voice: dialogue.voice, // Utiliser la voix spécifiée
-            input: segment
-          });
           
-          console.log(`Réponse reçue de l'API OpenAI TTS pour le segment ${j+1}`);
-          
-          // Convertir la réponse en buffer
-          const buffer = Buffer.from(await mp3Response.arrayBuffer());
-          console.log(`Buffer créé pour le segment ${j+1}, taille:`, buffer.length, "octets");
-          
-          // Ajouter le buffer à la liste
-          audioBuffers.push(buffer);
+          try {
+            // Vérifier que la voix est valide
+            const validVoice = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"].includes(dialogue.voice) 
+              ? dialogue.voice 
+              : "alloy";
+            
+            if (validVoice !== dialogue.voice) {
+              console.warn(`Voix ${dialogue.voice} non reconnue, utilisation de la voix alloy par défaut.`);
+            }
+            
+            const mp3Response = await openai.audio.speech.create({
+              model: "tts-1",
+              voice: validVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+              input: segment
+            });
+            
+            console.log(`Réponse reçue de l'API OpenAI TTS pour le segment ${j+1}`);
+            
+            // Convertir la réponse en buffer
+            const buffer = Buffer.from(await mp3Response.arrayBuffer());
+            console.log(`Buffer créé pour le segment ${j+1}, taille:`, buffer.length, "octets");
+            
+            // Ajouter le buffer à la liste
+            audioBuffers.push(buffer);
+          } catch (segmentError) {
+            console.error(`Erreur lors de la génération du segment ${j+1}:`, segmentError);
+            // Continuer avec le segment suivant
+          }
         }
+      }
+      
+      // Vérifier si des segments audio ont été générés
+      if (audioBuffers.length === 0) {
+        console.error("Aucun segment audio n'a pu être généré. Utilisation du fichier audio d'exemple.");
+        return `/audio/sample-podcast.mp3?t=${Date.now()}`;
       }
       
       // Combiner tous les buffers en un seul
@@ -417,99 +466,29 @@ async function generateOpenAIAudio(transcript: string, params: GenerationParams,
 async function generateEdgeTTSAudio(transcript: string, params: GenerationParams): Promise<string> {
   try {
     console.log("Initialisation du client Edge TTS pour la génération audio...");
+    console.log("Langue sélectionnée:", params.language);
     
-    // Préparer le texte pour la synthèse vocale
-    console.log("Préparation du texte pour la synthèse vocale...");
-    
-    // Extraire les dialogues comme dans les autres fonctions
-    console.log("Transcription reçue:", transcript.substring(0, 200) + "...");
-    
-    // Essayer d'extraire les dialogues au format <Person1>...</Person1>
-    const personRegex = /<Person(\d+)>(.*?)<\/Person\d+>/g;
-    let match;
-    const dialogues: { speaker: string; text: string }[] = [];
-    let hasMatches = false;
-    
-    while ((match = personRegex.exec(transcript)) !== null) {
-      hasMatches = true;
-      const speakerNumber = parseInt(match[1]);
-      const text = match[2].trim();
-      
-      // Déterminer la voix à utiliser en fonction du numéro de l'intervenant
-      const speaker = speakerNumber === 1 ? params.firstSpeaker : params.secondSpeaker;
-      
-      dialogues.push({ speaker, text });
-    }
-    
-    // Si aucun dialogue n'a été trouvé au format <Person1>, essayer d'autres formats
-    if (!hasMatches) {
-      console.log("Aucun dialogue trouvé au format <Person1>. Essai d'autres formats...");
-      
-      // Format avec *Présentateur:* ou *Expert:*
-      const speakerRegex = /\*(Présentateur|Expert)\s*:\*\s*(.*?)(?=\*\w+\s*:\*|$)/g;
-      while ((match = speakerRegex.exec(transcript)) !== null) {
-        const speaker = match[1].trim();
-        const text = match[2].trim();
-        
-        if (text) {
-          dialogues.push({ speaker, text });
-        }
-      }
-      
-      // Si toujours aucun dialogue, essayer un autre format
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé au format *Présentateur:*. Essai d'autres formats...");
-        
-        // Format avec Présentateur: ou Expert: (sans astérisques)
-        const simpleRegex = /(Présentateur|Expert)\s*:\s*(.*?)(?=(?:Présentateur|Expert)\s*:|$)/g;
-        while ((match = simpleRegex.exec(transcript)) !== null) {
-          const speaker = match[1].trim();
-          const text = match[2].trim();
-          
-          if (text) {
-            dialogues.push({ speaker, text });
-          }
-        }
-      }
-      
-      // Si toujours aucun dialogue, utiliser le texte complet
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé dans les formats connus. Utilisation du texte complet.");
-        dialogues.push({ 
-          speaker: params.firstSpeaker, 
-          text: transcript.replace(/\*\*.*?\*\*/g, '').replace(/\*.*?\*/g, '').trim() 
-        });
-      }
-    }
-    
-    console.log(`Dialogues extraits: ${dialogues.length}`);
-    dialogues.forEach((d, i) => {
-      if (i < 3) {
-        console.log(`Dialogue ${i+1}: ${d.speaker} - ${d.text.substring(0, 50)}...`);
-      }
-    });
+    // Extraire les dialogues de la transcription
+    // Convertir le format de dialogue pour Edge TTS
+    const extractedDialogues = extractDialogues(transcript, params);
+    const dialogues = extractedDialogues.map(d => ({
+      speaker: d.speaker,
+      text: d.text,
+      isSpeaker1: d.voice === params.firstSpeakerVoice
+    }));
     
     // Vérifier si des dialogues ont été extraits
     if (dialogues.length === 0) {
       console.warn("Aucun dialogue n'a pu être extrait. Utilisation du texte brut.");
       dialogues.push({ 
         speaker: params.firstSpeaker, 
-        text: transcript.trim() 
+        text: transcript.trim(),
+        isSpeaker1: true
       });
     }
     
     // Traiter l'ensemble de la transcription
     console.log(`Traitement de l'ensemble de la transcription (${dialogues.length} lignes de dialogue)...`);
-    
-    // Combiner tous les dialogues en un seul texte
-    const fullText = dialogues.map(d => d.text).join(' ');
-    console.log("Longueur du texte complet:", fullText.length, "caractères");
-    
-    // Vérifier si le texte est vide
-    if (fullText.trim().length === 0) {
-      console.error("Le texte extrait est vide. Utilisation d'un texte par défaut.");
-      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
-    }
     
     // Générer un nom de fichier unique
     const timestamp = Date.now();
@@ -535,73 +514,117 @@ async function generateEdgeTTSAudio(transcript: string, params: GenerationParams
       // Créer un SpeechSynthesizer
       const synthesizer = new sdk.SpeechSynthesizer(speechConfig);
       
-      // Définir la voix en fonction de la langue
-      let voiceName = "fr-FR-HenriNeural"; // Voix française par défaut
+      // Définir les voix en fonction de la langue
+      let firstSpeakerVoice = "fr-FR-HenriNeural"; // Voix française masculine par défaut
+      let secondSpeakerVoice = "fr-FR-DeniseNeural"; // Voix française féminine par défaut
       
-      if (params.language === 'en') {
-        voiceName = "en-US-GuyNeural"; // Voix anglaise
-      } else if (params.language === 'es') {
-        voiceName = "es-ES-AlvaroNeural"; // Voix espagnole
-      } else if (params.language === 'de') {
-        voiceName = "de-DE-ConradNeural"; // Voix allemande
+      // Sélectionner les voix en fonction de la langue
+      switch (params.language) {
+        case 'fr':
+          firstSpeakerVoice = "fr-FR-HenriNeural"; // Voix française masculine
+          secondSpeakerVoice = "fr-FR-DeniseNeural"; // Voix française féminine
+          break;
+        case 'en':
+          firstSpeakerVoice = "en-US-GuyNeural"; // Voix anglaise masculine
+          secondSpeakerVoice = "en-US-JennyNeural"; // Voix anglaise féminine
+          break;
+        case 'es':
+          firstSpeakerVoice = "es-ES-AlvaroNeural"; // Voix espagnole masculine
+          secondSpeakerVoice = "es-ES-ElviraNeural"; // Voix espagnole féminine
+          break;
+        case 'de':
+          firstSpeakerVoice = "de-DE-ConradNeural"; // Voix allemande masculine
+          secondSpeakerVoice = "de-DE-KatjaNeural"; // Voix allemande féminine
+          break;
+        case 'it':
+          firstSpeakerVoice = "it-IT-DiegoNeural"; // Voix italienne masculine
+          secondSpeakerVoice = "it-IT-ElsaNeural"; // Voix italienne féminine
+          break;
+        case 'pt':
+          firstSpeakerVoice = "pt-PT-DuarteNeural"; // Voix portugaise masculine
+          secondSpeakerVoice = "pt-PT-RaquelNeural"; // Voix portugaise féminine
+          break;
+        case 'nl':
+          firstSpeakerVoice = "nl-NL-MaartenNeural"; // Voix néerlandaise masculine
+          secondSpeakerVoice = "nl-NL-ColetteNeural"; // Voix néerlandaise féminine
+          break;
+        case 'ru':
+          firstSpeakerVoice = "ru-RU-DmitryNeural"; // Voix russe masculine
+          secondSpeakerVoice = "ru-RU-SvetlanaNeural"; // Voix russe féminine
+          break;
+        case 'zh':
+          firstSpeakerVoice = "zh-CN-YunxiNeural"; // Voix chinoise masculine
+          secondSpeakerVoice = "zh-CN-XiaoxiaoNeural"; // Voix chinoise féminine
+          break;
+        case 'ja':
+          firstSpeakerVoice = "ja-JP-KeitaNeural"; // Voix japonaise masculine
+          secondSpeakerVoice = "ja-JP-NanamiNeural"; // Voix japonaise féminine
+          break;
       }
       
-      // Créer un SSML pour la synthèse vocale
-      const ssml = `
-      <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${params.language}">
-        <voice name="${voiceName}">
-          ${fullText}
-        </voice>
-      </speak>
-      `;
+      // Générer l'audio pour chaque dialogue avec la voix appropriée
+      const audioBuffers: Buffer[] = [];
       
-      console.log("Appel à l'API Edge TTS...");
-      
-      // Créer un fichier audio temporaire
-      const tempFilePath = path.join(process.cwd(), 'public', 'audio', `temp_${timestamp}.wav`);
-      
-      // Générer l'audio
-      return new Promise<string>((resolve, reject) => {
-        synthesizer.speakSsmlAsync(
-          ssml,
-          result => {
-            if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
-              console.log("Synthèse vocale terminée");
-              
-              // Écrire le fichier audio
-              const audioData = result.audioData;
-              const buffer = Buffer.from(audioData);
-              
-              writeFile(filePath, buffer)
-                .then(() => {
-                  console.log("Fichier audio écrit avec succès");
-                  synthesizer.close();
-                  resolve(`/audio/${fileName}`);
-                })
-                .catch(error => {
-                  console.error("Erreur lors de l'écriture du fichier audio:", error);
-                  synthesizer.close();
-                  resolve(`/audio/sample-podcast.mp3?t=${timestamp}`);
-                });
-            } else {
-              console.error(`Erreur lors de la synthèse vocale: ${result.errorDetails}`);
-              synthesizer.close();
-              resolve(`/audio/sample-podcast.mp3?t=${timestamp}`);
-            }
-          },
-          error => {
-            console.error(`Erreur lors de la synthèse vocale: ${error}`);
-            synthesizer.close();
-            resolve(`/audio/sample-podcast.mp3?t=${timestamp}`);
+      for (let i = 0; i < dialogues.length; i++) {
+        const dialogue = dialogues[i];
+        const voiceName = dialogue.isSpeaker1 ? firstSpeakerVoice : secondSpeakerVoice;
+        
+        console.log(`Génération de l'audio pour le dialogue ${i+1}/${dialogues.length} avec la voix ${voiceName}...`);
+        
+        // Créer un SSML pour la synthèse vocale
+        const ssml = `
+        <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${params.language}">
+          <voice name="${voiceName}">
+            ${dialogue.text}
+          </voice>
+        </speak>
+        `;
+        
+        // Générer l'audio
+        try {
+          const result = await new Promise<sdk.SpeechSynthesisResult>((resolve, reject) => {
+            synthesizer.speakSsmlAsync(
+              ssml,
+              result => resolve(result),
+              error => reject(error)
+            );
+          });
+          
+          if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
+            console.log(`Audio généré avec succès pour le dialogue ${i+1}`);
+            
+            // Convertir la réponse en buffer
+            const buffer = Buffer.from(result.audioData);
+            console.log(`Buffer créé pour le dialogue ${i+1}, taille:`, buffer.length, "octets");
+            
+            // Ajouter le buffer à la liste
+            audioBuffers.push(buffer);
+          } else {
+            console.error(`Erreur lors de la synthèse vocale: ${result.errorDetails}`);
           }
-        );
-      });
+        } catch (error) {
+          console.error(`Erreur lors de la synthèse vocale: ${error}`);
+        }
+      }
+      
+      // Combiner tous les buffers en un seul
+      console.log("Combinaison des segments audio...");
+      const combinedBuffer = Buffer.concat(audioBuffers);
+      console.log("Buffer combiné, taille totale:", combinedBuffer.length, "octets");
+      
+      // Écrire le fichier audio
+      console.log("Écriture du fichier audio:", filePath);
+      await writeFile(filePath, combinedBuffer);
+      console.log("Fichier audio écrit avec succès");
+      
+      // Retourner l'URL du fichier audio
+      return `/audio/${fileName}`;
     } catch (apiError: any) {
       console.error("Erreur lors de l'appel à l'API Edge TTS:", apiError);
       
       // En cas d'erreur, utiliser le fichier audio d'exemple
       console.log("Utilisation du fichier audio d'exemple suite à une erreur");
-      return `/audio/sample-podcast.mp3?t=${timestamp}`;
+      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
     }
   } catch (error) {
     console.error("Erreur lors de la génération de l'audio avec Edge TTS:", error);
@@ -614,83 +637,16 @@ async function generateElevenLabsAudio(transcript: string, params: GenerationPar
   try {
     console.log("Initialisation de l'API ElevenLabs pour la génération audio...");
     
-    // Préparer le texte pour la synthèse vocale
-    console.log("Préparation du texte pour la synthèse vocale...");
-    
-    // Extraire les dialogues comme dans la fonction generateOpenAIAudio
-    console.log("Transcription reçue:", transcript.substring(0, 200) + "...");
-    
-    // Essayer d'extraire les dialogues au format <Person1>...</Person1>
-    const personRegex = /<Person(\d+)>(.*?)<\/Person\d+>/g;
-    let match;
-    const dialogues: { speaker: string; text: string }[] = [];
-    let hasMatches = false;
-    
-    while ((match = personRegex.exec(transcript)) !== null) {
-      hasMatches = true;
-      const speakerNumber = parseInt(match[1]);
-      const text = match[2].trim();
-      
-      // Déterminer la voix à utiliser en fonction du numéro de l'intervenant
-      const speaker = speakerNumber === 1 ? params.firstSpeaker : params.secondSpeaker;
-      
-      dialogues.push({ speaker, text });
-    }
-    
-    // Si aucun dialogue n'a été trouvé au format <Person1>, essayer d'autres formats
-    if (!hasMatches) {
-      console.log("Aucun dialogue trouvé au format <Person1>. Essai d'autres formats...");
-      
-      // Format avec *Présentateur:* ou *Expert:*
-      const speakerRegex = /\*(Présentateur|Expert)\s*:\*\s*(.*?)(?=\*\w+\s*:\*|$)/g;
-      while ((match = speakerRegex.exec(transcript)) !== null) {
-        const speaker = match[1].trim();
-        const text = match[2].trim();
-        
-        if (text) {
-          dialogues.push({ speaker, text });
-        }
-      }
-      
-      // Si toujours aucun dialogue, essayer un autre format
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé au format *Présentateur:*. Essai d'autres formats...");
-        
-        // Format avec Présentateur: ou Expert: (sans astérisques)
-        const simpleRegex = /(Présentateur|Expert)\s*:\s*(.*?)(?=(?:Présentateur|Expert)\s*:|$)/g;
-        while ((match = simpleRegex.exec(transcript)) !== null) {
-          const speaker = match[1].trim();
-          const text = match[2].trim();
-          
-          if (text) {
-            dialogues.push({ speaker, text });
-          }
-        }
-      }
-      
-      // Si toujours aucun dialogue, utiliser le texte complet
-      if (dialogues.length === 0) {
-        console.log("Aucun dialogue trouvé dans les formats connus. Utilisation du texte complet.");
-        dialogues.push({ 
-          speaker: params.firstSpeaker, 
-          text: transcript.replace(/\*\*.*?\*\*/g, '').replace(/\*.*?\*/g, '').trim() 
-        });
-      }
-    }
-    
-    console.log(`Dialogues extraits: ${dialogues.length}`);
-    dialogues.forEach((d, i) => {
-      if (i < 3) {
-        console.log(`Dialogue ${i+1}: ${d.speaker} - ${d.text.substring(0, 50)}...`);
-      }
-    });
+    // Extraire les dialogues de la transcription
+    const dialogues = extractDialogues(transcript, params);
     
     // Vérifier si des dialogues ont été extraits
     if (dialogues.length === 0) {
       console.warn("Aucun dialogue n'a pu être extrait. Utilisation du texte brut.");
       dialogues.push({ 
         speaker: params.firstSpeaker, 
-        text: transcript.trim() 
+        text: transcript.trim(),
+        voice: params.firstSpeakerVoice
       });
     }
     
@@ -777,6 +733,172 @@ async function generateElevenLabsAudio(transcript: string, params: GenerationPar
     console.error("Erreur lors de la génération de l'audio avec ElevenLabs:", error);
     return `/audio/sample-podcast.mp3?t=${Date.now()}`;
   }
+}
+
+// Fonction pour extraire les dialogues d'une transcription
+function extractDialogues(transcript: string, params: GenerationParams): { speaker: string; text: string; voice: string }[] {
+  console.log("Extraction des dialogues de la transcription...");
+  console.log("Transcription brute:", transcript.substring(0, 200) + "...");
+  
+  // Nettoyer la transcription des éventuels en-têtes ou formatages Markdown
+  let cleanedTranscript = transcript
+    .replace(/^#.*$/gm, '') // Supprimer les titres Markdown
+    .replace(/^\*\*.*\*\*$/gm, '') // Supprimer les lignes en gras
+    .replace(/^_.*_$/gm, '') // Supprimer les lignes soulignées
+    .replace(/^\s*[-*]\s+/gm, '') // Supprimer les listes à puces
+    .replace(/\*\*.*?\*\*/g, '') // Supprimer le texte en gras
+    .replace(/\*Tagline:.*?\*/g, '') // Supprimer la tagline
+    .trim();
+  
+  console.log("Transcription nettoyée:", cleanedTranscript.substring(0, 200) + "...");
+  
+  const dialogues: { speaker: string; text: string; voice: string }[] = [];
+  let hasMatches = false;
+  
+  // 1. Essayer d'extraire les dialogues au format <Person1>...</Person1>
+  const personRegex = /<Person(\d+)>(.*?)<\/Person\d+>/g;
+  let match;
+  
+  while ((match = personRegex.exec(cleanedTranscript)) !== null) {
+    hasMatches = true;
+    const speakerNumber = parseInt(match[1]);
+    const text = match[2].trim();
+    
+    if (text.length > 0) {
+      // Déterminer la voix à utiliser en fonction du numéro de l'intervenant
+      const speaker = speakerNumber === 1 ? params.firstSpeaker : params.secondSpeaker;
+      const voice = speakerNumber === 1 ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+      
+      dialogues.push({ speaker, text, voice });
+    }
+  }
+  
+  // 2. Si aucun dialogue n'a été trouvé au format <Person1>, essayer le format avec *Nom:* texte
+  if (!hasMatches) {
+    console.log("Aucun dialogue trouvé au format <Person1>. Essai du format avec *Nom:* texte");
+    
+    // Format avec *Présentateur:* ou *Expert:* ou tout autre nom suivi de :*
+    const speakerRegex = /\*([^:*]+)\s*:\*\s*(.*?)(?=\*[^:*]+\s*:\*|$)/g;
+    while ((match = speakerRegex.exec(cleanedTranscript)) !== null) {
+      hasMatches = true;
+      const speaker = match[1].trim();
+      const text = match[2].trim();
+      
+      if (text.length > 0) {
+        // Déterminer la voix en fonction du rôle
+        const isFirstSpeaker = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase());
+        const voice = isFirstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+        dialogues.push({ speaker, text, voice });
+      }
+    }
+  }
+  
+  // 3. Si toujours aucun dialogue, essayer le format avec Nom: texte (sans astérisques)
+  if (!hasMatches) {
+    console.log("Aucun dialogue trouvé au format *Nom:*. Essai du format avec Nom: texte");
+    
+    // Format avec Présentateur: ou Expert: ou tout autre nom suivi de :
+    const lines = cleanedTranscript.split('\n');
+    const simpleRegex = /^([^:]+)\s*:\s*(.+)$/;
+    
+    for (const line of lines) {
+      const match = line.match(simpleRegex);
+      if (match) {
+        hasMatches = true;
+        const speaker = match[1].trim();
+        const text = match[2].trim();
+        
+        if (text.length > 0) {
+          // Déterminer la voix en fonction du rôle
+          const isFirstSpeaker = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase());
+          const voice = isFirstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+          dialogues.push({ speaker, text, voice });
+        }
+      }
+    }
+  }
+  
+  // 4. Si toujours aucun dialogue, essayer de diviser par lignes
+  if (!hasMatches) {
+    console.log("Aucun dialogue trouvé dans les formats connus. Essai de division par lignes");
+    
+    const lines = cleanedTranscript.split('\n').filter(line => line.trim() !== '');
+    let currentSpeaker = params.firstSpeaker;
+    let currentVoice = params.firstSpeakerVoice;
+    
+    for (const line of lines) {
+      if (line.trim().length > 0) {
+        // Alterner entre les deux intervenants
+        dialogues.push({ 
+          speaker: currentSpeaker, 
+          text: line.trim(),
+          voice: currentVoice
+        });
+        
+        // Changer d'intervenant pour la prochaine ligne
+        if (currentSpeaker === params.firstSpeaker) {
+          currentSpeaker = params.secondSpeaker;
+          currentVoice = params.secondSpeakerVoice;
+        } else {
+          currentSpeaker = params.firstSpeaker;
+          currentVoice = params.firstSpeakerVoice;
+        }
+      }
+    }
+    
+    if (dialogues.length > 0) {
+      hasMatches = true;
+    }
+  }
+  
+  // 5. Si toujours aucun dialogue, utiliser le texte complet
+  if (!hasMatches || dialogues.length === 0) {
+    console.log("Aucune méthode d'extraction n'a fonctionné. Utilisation du texte complet");
+    
+    // Diviser le texte en paragraphes
+    const paragraphs = cleanedTranscript.split('\n\n').filter(p => p.trim().length > 0);
+    
+    if (paragraphs.length > 1) {
+      // Alterner les paragraphes entre les deux intervenants
+      let currentSpeaker = params.firstSpeaker;
+      let currentVoice = params.firstSpeakerVoice;
+      
+      for (const paragraph of paragraphs) {
+        if (paragraph.trim().length > 0) {
+          dialogues.push({ 
+            speaker: currentSpeaker, 
+            text: paragraph.trim(),
+            voice: currentVoice
+          });
+          
+          // Changer d'intervenant pour le prochain paragraphe
+          if (currentSpeaker === params.firstSpeaker) {
+            currentSpeaker = params.secondSpeaker;
+            currentVoice = params.secondSpeakerVoice;
+          } else {
+            currentSpeaker = params.firstSpeaker;
+            currentVoice = params.firstSpeakerVoice;
+          }
+        }
+      }
+    } else {
+      // Utiliser le texte complet
+      dialogues.push({ 
+        speaker: params.firstSpeaker, 
+        text: cleanedTranscript,
+        voice: params.firstSpeakerVoice
+      });
+    }
+  }
+  
+  console.log(`Dialogues extraits: ${dialogues.length}`);
+  dialogues.forEach((d, i) => {
+    if (i < 3) {
+      console.log(`Dialogue ${i+1}: ${d.speaker} (${d.voice}) - ${d.text.substring(0, 50)}...`);
+    }
+  });
+  
+  return dialogues;
 }
 
 // Fonction pour générer un podcast

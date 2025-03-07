@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { ContentSource, GenerationParams } from '@/lib/types';
+import { ContentSource, GenerationParams, OpenAIVoice } from '@/lib/types';
 import { hasApiKeys, getApiKeys } from '@/lib/api-config';
 import AudioPlayer from './audio-player';
 
@@ -35,6 +35,10 @@ const generationSchema = z.object({
   // Paramètres avancés
   ttsModel: z.enum(['openai', 'elevenlabs', 'edge']),
   creativity: z.number().min(0).max(1),
+  
+  // Voix des intervenants (OpenAI)
+  firstSpeakerVoice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']),
+  secondSpeakerVoice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']),
 });
 
 export default function GenerationForm() {
@@ -63,6 +67,8 @@ export default function GenerationForm() {
       language: 'fr',
       ttsModel: 'openai',
       creativity: 0.7,
+      firstSpeakerVoice: 'alloy',
+      secondSpeakerVoice: 'alloy',
     },
   });
 
@@ -104,6 +110,8 @@ export default function GenerationForm() {
         language: values.language,
         ttsModel: values.ttsModel,
         creativity: values.creativity,
+        firstSpeakerVoice: values.firstSpeakerVoice,
+        secondSpeakerVoice: values.secondSpeakerVoice,
       };
       
       // Récupérer les clés API
@@ -436,6 +444,72 @@ export default function GenerationForm() {
                         </div>
                       </div>
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="firstSpeakerVoice"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voix du premier intervenant</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={isLoading || form.watch('ttsModel') !== 'openai'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionnez une voix" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="alloy">Alloy (neutre)</SelectItem>
+                        <SelectItem value="echo">Echo (masculine grave)</SelectItem>
+                        <SelectItem value="fable">Fable (féminine douce)</SelectItem>
+                        <SelectItem value="onyx">Onyx (masculine profonde)</SelectItem>
+                        <SelectItem value="nova">Nova (féminine énergique)</SelectItem>
+                        <SelectItem value="shimmer">Shimmer (féminine claire)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Voix utilisée pour le premier intervenant (uniquement pour OpenAI).
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="secondSpeakerVoice"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voix du second intervenant</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={isLoading || form.watch('ttsModel') !== 'openai'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionnez une voix" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="alloy">Alloy (neutre)</SelectItem>
+                        <SelectItem value="echo">Echo (masculine grave)</SelectItem>
+                        <SelectItem value="fable">Fable (féminine douce)</SelectItem>
+                        <SelectItem value="onyx">Onyx (masculine profonde)</SelectItem>
+                        <SelectItem value="nova">Nova (féminine énergique)</SelectItem>
+                        <SelectItem value="shimmer">Shimmer (féminine claire)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Voix utilisée pour le second intervenant (uniquement pour OpenAI).
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
