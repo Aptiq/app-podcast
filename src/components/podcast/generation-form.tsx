@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { ContentSource, GenerationParams, OpenAIVoice } from '@/lib/types';
+import { ContentSource, GenerationParams, OpenAIVoice, ELEVENLABS_VOICES } from '@/lib/types';
 import { hasApiKeys, getApiKeys } from '@/lib/api-config';
 import AudioPlayer from './audio-player';
 
@@ -39,6 +39,10 @@ const generationSchema = z.object({
   // Voix des intervenants (OpenAI)
   firstSpeakerVoice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']),
   secondSpeakerVoice: z.enum(['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']),
+  
+  // Voix des intervenants (ElevenLabs)
+  firstSpeakerElevenLabsVoiceId: z.string().optional(),
+  secondSpeakerElevenLabsVoiceId: z.string().optional(),
 });
 
 export default function GenerationForm() {
@@ -69,33 +73,30 @@ export default function GenerationForm() {
       creativity: 0.7,
       firstSpeakerVoice: 'alloy',
       secondSpeakerVoice: 'alloy',
+      firstSpeakerElevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM', // Rachel
+      secondSpeakerElevenLabsVoiceId: 'ErXwobaYiN019PkySvjV', // Antoni
     },
   });
 
   // Soumission du formulaire
   const onSubmit = async (values: z.infer<typeof generationSchema>) => {
-    if (!hasKeys) {
-      toast.error('Veuillez configurer au moins une clé API');
-      return;
-    }
-    
-    setIsLoading(true);
-    setProgress(0);
-    
     try {
-      // Simulation de progression
-      const interval = setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 95) {
-            clearInterval(interval);
-            return 95;
-          }
-          return prev + 5;
-        });
-      }, 1000);
+      // Vérifier si les clés API sont configurées
+      if (!hasApiKeys()) {
+        toast.error("Veuillez configurer les clés API dans l'onglet Configuration des API");
+        return;
+      }
       
-      // Préparation des données
-      const contentSource: ContentSource = {
+      // Réinitialiser l'état
+      setIsLoading(true);
+      setProgress(0);
+      setAudioUrl(null);
+      
+      // Récupérer les clés API
+      const apiConfig = getApiKeys();
+      
+      // Préparer les paramètres de génération
+      const source: ContentSource = {
         type: values.contentType,
         content: values.content,
       };
@@ -112,40 +113,66 @@ export default function GenerationForm() {
         creativity: values.creativity,
         firstSpeakerVoice: values.firstSpeakerVoice,
         secondSpeakerVoice: values.secondSpeakerVoice,
+        firstSpeakerElevenLabsVoiceId: values.firstSpeakerElevenLabsVoiceId || '21m00Tcm4TlvDq8ikWAM',
+        secondSpeakerElevenLabsVoiceId: values.secondSpeakerElevenLabsVoiceId || 'ErXwobaYiN019PkySvjV',
       };
       
-      // Récupérer les clés API
-      const apiConfig = getApiKeys();
+      // Simuler la progression
+      const progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 1000);
       
-      // Appel à l'API
+      // Appeler l'API de génération
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          source: contentSource, 
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          source,
           params,
-          apiConfig // Ajouter les clés API à la requête
+          apiConfig,
         }),
       });
       
+      // Arrêter la simulation de progression
+      clearInterval(progressInterval);
+      
+      // Récupérer les données de la réponse
+      const data = await response.json();
+      
+      // Vérifier la réponse
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erreur lors de la génération du podcast');
+        // Afficher le message d'erreur spécifique renvoyé par l'API
+        const errorMessage = data.error || 'Erreur lors de la génération du podcast';
+        toast.error(errorMessage);
+        return;
       }
       
-      const result = await response.json();
-      
-      // Mise à jour de l'URL audio
-      setAudioUrl(result.audioUrl);
-      
-      // Fin de la progression
-      clearInterval(interval);
+      // Mettre à jour l'état
       setProgress(100);
+      setAudioUrl(data.audioUrl);
       
-      toast.success('Podcast généré avec succès');
+      // Vérifier si l'URL audio contient "sample-podcast.mp3"
+      if (data.audioUrl && data.audioUrl.includes('sample-podcast.mp3')) {
+        // Afficher un avertissement que l'audio d'exemple est utilisé
+        toast.warning(
+          `Un audio d'exemple est utilisé car le service ${params.ttsModel.toUpperCase()} n'a pas pu générer l'audio. Raisons possibles: quota dépassé, clé API invalide, ou service indisponible.`,
+          { duration: 6000 }
+        );
+      } else {
+        // Afficher un message de succès
+        toast.success('Podcast généré avec succès !');
+      }
     } catch (error) {
       console.error('Erreur lors de la génération du podcast:', error);
-      toast.error(error instanceof Error ? error.message : 'Erreur lors de la génération du podcast');
+      toast.error('Erreur lors de la communication avec le serveur. Veuillez réessayer.');
     } finally {
       setIsLoading(false);
     }
@@ -509,6 +536,70 @@ export default function GenerationForm() {
                     </Select>
                     <FormDescription>
                       Voix utilisée pour le second intervenant (uniquement pour OpenAI).
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="firstSpeakerElevenLabsVoiceId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voix ElevenLabs du premier intervenant</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={isLoading || form.watch('ttsModel') !== 'elevenlabs'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionnez une voix" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {ELEVENLABS_VOICES.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {voice.name} ({voice.description})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Voix utilisée pour le premier intervenant (uniquement pour ElevenLabs).
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="secondSpeakerElevenLabsVoiceId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Voix ElevenLabs du second intervenant</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={isLoading || form.watch('ttsModel') !== 'elevenlabs'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionnez une voix" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {ELEVENLABS_VOICES.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {voice.name} ({voice.description})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Voix utilisée pour le second intervenant (uniquement pour ElevenLabs).
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

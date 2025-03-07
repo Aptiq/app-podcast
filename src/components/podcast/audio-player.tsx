@@ -15,7 +15,11 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [currentAudioUrl, setCurrentAudioUrl] = useState("");
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Vérifier si l'URL audio est valide
   const isValidUrl = audioUrl && (
@@ -35,7 +39,11 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
       console.log("Test d'accès à l'URL audio:", fullUrl);
       
       // Tester l'accès à l'URL avec fetch
-      const response = await fetch(fullUrl, { method: 'HEAD' });
+      const response = await fetch(fullUrl, { 
+        method: 'HEAD',
+        // Ajouter un cache-buster pour éviter les problèmes de cache
+        cache: 'no-cache'
+      });
       
       console.log("Réponse du test d'URL:", response.status, response.statusText);
       
@@ -48,10 +56,18 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
 
   // Créer l'élément audio lors du montage du composant
   useEffect(() => {
+    // Si l'URL n'a pas changé, ne pas recharger l'audio
+    if (audioUrl === currentAudioUrl && audioRef.current) {
+      return;
+    }
+    
     // Réinitialiser l'état
     setIsLoading(true);
     setHasError(false);
     setErrorMessage("");
+    setCurrentAudioUrl(audioUrl);
+    setCurrentTime(0);
+    setDuration(0);
     
     console.log("AudioPlayer - URL audio reçue:", audioUrl);
     
@@ -77,31 +93,47 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
       
       // Créer un nouvel élément audio
       const audio = new Audio();
-      audioRef.current = audio;
       
       // Configurer les gestionnaires d'événements avant de définir la source
       audio.addEventListener('loadeddata', () => {
         console.log("Audio chargé avec succès");
         setIsLoading(false);
+        setDuration(audio.duration);
+      });
+      
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
       });
       
       audio.addEventListener('ended', () => {
         setIsPlaying(false);
+        setCurrentTime(0);
       });
       
       // Gestion des erreurs de chargement
       audio.addEventListener('error', (e) => {
         console.error("Erreur de chargement audio:", e);
+        // Vérifier si l'erreur a un message valide
+        let errorMsg = "Erreur inconnue";
+        if (audio.error) {
+          errorMsg = audio.error.message || "Erreur de chargement";
+        }
         setIsLoading(false);
         setHasError(true);
-        setErrorMessage(`Erreur de chargement: ${audio.error?.message || 'Erreur inconnue'}`);
+        setErrorMessage(`Erreur de chargement: ${errorMsg}`);
         toast.error("Impossible de charger l'audio. Veuillez réessayer.");
       });
       
       // Définir la source après avoir configuré les gestionnaires d'événements
       try {
-        audio.src = audioUrl;
+        // Ajouter un paramètre timestamp pour éviter les problèmes de cache
+        const urlWithTimestamp = audioUrl.includes('?') 
+          ? `${audioUrl}&t=${Date.now()}` 
+          : `${audioUrl}?t=${Date.now()}`;
+          
+        audio.src = urlWithTimestamp;
         audio.load(); // Forcer le chargement
+        audioRef.current = audio;
       } catch (error) {
         console.error("Exception lors du chargement audio:", error);
         setIsLoading(false);
@@ -118,11 +150,12 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
         audio.pause();
         audio.src = '';
         audio.removeEventListener('loadeddata', () => {});
+        audio.removeEventListener('timeupdate', () => {});
         audio.removeEventListener('ended', () => {});
         audio.removeEventListener('error', () => {});
       }
     };
-  }, [audioUrl, isValidUrl]);
+  }, [audioUrl, isValidUrl, currentAudioUrl]);
 
   // Fonction pour télécharger l'audio
   const handleDownload = (e: React.MouseEvent) => {
@@ -140,6 +173,8 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
     setIsLoading(true);
     setHasError(false);
     setErrorMessage("");
+    setCurrentTime(0);
+    setDuration(0);
     
     // Forcer le rechargement en ajoutant un timestamp à l'URL
     const refreshedUrl = audioUrl.includes('?') 
@@ -152,6 +187,26 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
       audioRef.current.load();
     }
   };
+
+  // Synchroniser l'élément audio du DOM avec notre référence
+  const syncAudioElement = () => {
+    if (audioElementRef.current && audioRef.current) {
+      // Synchroniser l'état de lecture
+      if (isPlaying && audioElementRef.current.paused) {
+        audioElementRef.current.play().catch(err => {
+          console.error("Erreur lors de la lecture:", err);
+          setIsPlaying(false);
+        });
+      } else if (!isPlaying && !audioElementRef.current.paused) {
+        audioElementRef.current.pause();
+      }
+    }
+  };
+
+  // Mettre à jour l'élément audio lorsque l'état de lecture change
+  useEffect(() => {
+    syncAudioElement();
+  }, [isPlaying]);
 
   return (
     <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-lg p-4 mt-4">
@@ -177,14 +232,34 @@ export default function AudioPlayer({ title, audioUrl }: AudioPlayerProps) {
         </div>
       ) : (
         <div className="space-y-4">
-          <audio 
-            src={audioUrl}
-            controls 
-            className="w-full" 
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-          />
+          <div className="bg-white dark:bg-gray-700 rounded-md p-2">
+            <audio 
+              ref={audioElementRef}
+              src={currentAudioUrl}
+              controls 
+              controlsList="nodownload"
+              className="w-full" 
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onEnded={() => setIsPlaying(false)}
+              onTimeUpdate={(e) => {
+                const target = e.target as HTMLAudioElement;
+                setCurrentTime(target.currentTime);
+              }}
+              onLoadedMetadata={(e) => {
+                const target = e.target as HTMLAudioElement;
+                setDuration(target.duration);
+                setIsLoading(false);
+              }}
+              onError={(e) => {
+                console.error("Erreur de lecture audio:", e);
+                setHasError(true);
+                setErrorMessage("Erreur lors de la lecture de l'audio");
+                toast.error("Erreur lors de la lecture de l'audio");
+              }}
+              style={{ width: '100%' }}
+            />
+          </div>
           
           <div className="flex justify-end">
             <Button 

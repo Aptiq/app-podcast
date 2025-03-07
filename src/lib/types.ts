@@ -28,6 +28,26 @@ export type OpenAIVoice =
   | 'nova' // Voix féminine énergique
   | 'shimmer'; // Voix féminine claire
 
+// Type pour les voix ElevenLabs
+export type ElevenLabsVoice = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+// Voix ElevenLabs prédéfinies
+export const ELEVENLABS_VOICES: ElevenLabsVoice[] = [
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", description: "Voix féminine calme et posée" },
+  { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", description: "Voix féminine énergique" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", description: "Voix féminine douce" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", description: "Voix masculine profonde" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", description: "Voix féminine jeune" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", description: "Voix masculine naturelle" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", description: "Voix masculine grave" },
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", description: "Voix masculine posée" },
+  { id: "yoZ06aMxZJJ28mfd3POQ", name: "Sam", description: "Voix masculine jeune" }
+];
+
 // Type pour les paramètres de génération
 export type GenerationParams = {
   // Paramètres basiques
@@ -46,6 +66,10 @@ export type GenerationParams = {
   // Voix des intervenants (OpenAI)
   firstSpeakerVoice: OpenAIVoice; // Voix du premier intervenant
   secondSpeakerVoice: OpenAIVoice; // Voix du second intervenant
+  
+  // Voix des intervenants (ElevenLabs)
+  firstSpeakerElevenLabsVoiceId: string; // ID de la voix ElevenLabs du premier intervenant
+  secondSpeakerElevenLabsVoiceId: string; // ID de la voix ElevenLabs du second intervenant
 };
 
 // Type pour la configuration des API

@@ -87,6 +87,15 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
       apiKey: openaiApiKey,
     });
     
+    // Limiter la taille du contenu source pour éviter les dépassements de contexte
+    let contentToUse = source.content;
+    const maxContentLength = 8000; // Limite approximative pour éviter de dépasser la limite de tokens
+    
+    if (contentToUse.length > maxContentLength) {
+      console.warn(`Contenu source trop long (${contentToUse.length} caractères), tronqué à ${maxContentLength} caractères.`);
+      contentToUse = contentToUse.substring(0, maxContentLength) + "...";
+    }
+    
     // Préparer le prompt pour la génération de transcription
     // Adapter le prompt en fonction de la langue
     let systemPrompt = "";
@@ -99,7 +108,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         userPrompt = `
         Génère un script de podcast entre deux personnes sur le sujet suivant:
         
-        ${source.content}
+        ${contentToUse}
         
         Format du script:
         <Person1>Texte de la première personne</Person1>
@@ -116,6 +125,8 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         
         Le script doit être naturel, avec des pauses, des hésitations et des expressions conversationnelles françaises.
         La longueur du script doit être d'environ ${params.length} mots.
+        
+        IMPORTANT: Assure-toi que le podcast a une introduction claire et une conclusion appropriée. La conclusion doit résumer les points clés et remercier l'auditeur.
         `;
         break;
       case 'en':
@@ -123,7 +134,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         userPrompt = `
         Generate a podcast script between two people on the following topic:
         
-        ${source.content}
+        ${contentToUse}
         
         Script format:
         <Person1>First person's text</Person1>
@@ -140,6 +151,8 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         
         The script should be natural, with pauses, hesitations, and conversational English expressions.
         The script length should be approximately ${params.length} words.
+        
+        IMPORTANT: Make sure the podcast has a clear introduction and a proper conclusion. The conclusion should summarize the key points and thank the listener.
         `;
         break;
       case 'es':
@@ -147,7 +160,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         userPrompt = `
         Genera un guión de podcast entre dos personas sobre el siguiente tema:
         
-        ${source.content}
+        ${contentToUse}
         
         Formato del guión:
         <Person1>Texto de la primera persona</Person1>
@@ -164,6 +177,8 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         
         El guión debe ser natural, con pausas, vacilaciones y expresiones conversacionales españolas.
         La longitud del guión debe ser de aproximadamente ${params.length} palabras.
+        
+        IMPORTANTE: Asegúrate de que el podcast tenga una introducción clara y una conclusión adecuada. La conclusión debe resumir los puntos clave y agradecer al oyente.
         `;
         break;
       default:
@@ -172,7 +187,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         userPrompt = `
         Generate a podcast script between two people on the following topic in ${params.language} language:
         
-        ${source.content}
+        ${contentToUse}
         
         Script format:
         <Person1>First person's text</Person1>
@@ -189,6 +204,8 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         
         The script should be natural, with pauses, hesitations, and conversational expressions in ${params.language}.
         The script length should be approximately ${params.length} words.
+        
+        IMPORTANT: Make sure the podcast has a clear introduction and a proper conclusion. The conclusion should summarize the key points and thank the listener.
         `;
     }
     
@@ -217,10 +234,85 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
       return transcript;
     } catch (apiError: any) {
       console.error("Erreur lors de l'appel à l'API OpenAI:", apiError);
+      
       // Afficher plus de détails sur l'erreur
       if (apiError.error) {
         console.error("Détails de l'erreur:", JSON.stringify(apiError.error, null, 2));
       }
+      
+      // Vérifier si c'est une erreur de dépassement de contexte
+      if (apiError.code === 'context_length_exceeded' || 
+          (apiError.error && apiError.error.code === 'context_length_exceeded') ||
+          (apiError.message && apiError.message.includes('maximum context length'))) {
+        
+        console.warn("Erreur de dépassement de contexte. Réduction de la taille du contenu et nouvel essai...");
+        
+        // Réduire davantage la taille du contenu
+        const reducedLength = Math.floor(maxContentLength / 2);
+        contentToUse = source.content.substring(0, reducedLength) + "...";
+        
+        // Reconstruire le prompt avec le contenu réduit
+        switch (params.language) {
+          case 'fr':
+            // Utiliser une approche sans le flag 's' (dotAll)
+            const frParts = userPrompt.split('Format du script:');
+            if (frParts.length > 1) {
+              const beforePart = frParts[0].split('Génère un script de podcast entre deux personnes sur le sujet suivant:')[0];
+              userPrompt = `${beforePart}Génère un script de podcast entre deux personnes sur le sujet suivant:\n\n${contentToUse}\n\nFormat du script:${frParts[1]}`;
+            }
+            break;
+          case 'en':
+            // Utiliser une approche sans le flag 's' (dotAll)
+            const enParts = userPrompt.split('Script format:');
+            if (enParts.length > 1) {
+              const beforePart = enParts[0].split('Generate a podcast script between two people on the following topic:')[0];
+              userPrompt = `${beforePart}Generate a podcast script between two people on the following topic:\n\n${contentToUse}\n\nScript format:${enParts[1]}`;
+            }
+            break;
+          case 'es':
+            // Utiliser une approche sans le flag 's' (dotAll)
+            const esParts = userPrompt.split('Formato del guión:');
+            if (esParts.length > 1) {
+              const beforePart = esParts[0].split('Genera un guión de podcast entre dos personas sobre el siguiente tema:')[0];
+              userPrompt = `${beforePart}Genera un guión de podcast entre dos personas sobre el siguiente tema:\n\n${contentToUse}\n\nFormato del guión:${esParts[1]}`;
+            }
+            break;
+          default:
+            // Utiliser une approche sans le flag 's' (dotAll)
+            const defaultParts = userPrompt.split('Script format:');
+            if (defaultParts.length > 1) {
+              // Trouver la partie avant le contenu
+              const beforeContent = defaultParts[0].split(`Generate a podcast script between two people on the following topic in ${params.language} language:`)[0];
+              userPrompt = `${beforeContent}Generate a podcast script between two people on the following topic in ${params.language} language:\n\n${contentToUse}\n\nScript format:${defaultParts[1]}`;
+            }
+        }
+        
+        // Nouvel essai avec le contenu réduit
+        try {
+          console.log("Nouvel essai avec contenu réduit...");
+          const retryResponse = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            temperature: params.creativity,
+            max_tokens: Math.min(4000, params.length * 4),
+          });
+          
+          const retryTranscript = retryResponse.choices[0]?.message?.content || getTranscriptExample(params.language, params);
+          
+          console.log("Transcription générée avec succès après réduction du contenu");
+          console.log("Extrait de la transcription:", retryTranscript.substring(0, 100) + "...");
+          
+          return retryTranscript;
+        } catch (retryError) {
+          console.error("Échec du second essai:", retryError);
+          return getTranscriptExample(params.language, params);
+        }
+      }
+      
+      // Pour les autres types d'erreurs, utiliser l'exemple de transcript
       return getTranscriptExample(params.language, params);
     }
   } catch (error) {
@@ -231,233 +323,232 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
 
 // Fonction pour générer un fichier audio à partir d'une transcription
 async function generateAudio(transcript: string, params: GenerationParams, apiConfig: ApiConfig): Promise<string> {
-  try {
-    console.log("=== GÉNÉRATION AUDIO ===");
-    
-    // Déterminer quelle API utiliser en fonction des clés disponibles et du modèle sélectionné
-    if (params.ttsModel === 'openai' && apiConfig.openai) {
+  console.log("=== GÉNÉRATION AUDIO ===");
+  
+  // Vérifier le modèle TTS sélectionné
+  switch (params.ttsModel) {
+    case 'openai':
+      if (!apiConfig.openai) {
+        throw new Error('Clé API OpenAI non configurée. Veuillez configurer votre clé API dans les paramètres.');
+      }
       console.log("Utilisation de l'API OpenAI pour la génération audio");
       return await generateOpenAIAudio(transcript, params, apiConfig.openai);
-    } else if (params.ttsModel === 'edge') {
-      console.log("Utilisation de l'API Edge TTS pour la génération audio");
-      return await generateEdgeTTSAudio(transcript, params);
-    } else if (params.ttsModel === 'elevenlabs' && apiConfig.elevenlabs) {
+      
+    case 'elevenlabs':
+      if (!apiConfig.elevenlabs) {
+        throw new Error('Clé API ElevenLabs non configurée. Veuillez configurer votre clé API dans les paramètres.');
+      }
       console.log("Utilisation de l'API ElevenLabs pour la génération audio");
       return await generateElevenLabsAudio(transcript, params, apiConfig.elevenlabs);
-    }
-    
-    // Si aucune API n'est disponible ou si le modèle n'est pas supporté,
-    // utiliser le fichier audio d'exemple
-    console.warn("Aucune API TTS disponible ou modèle non supporté, utilisation d'un fichier audio d'exemple");
-    
-    // Générer un nom de fichier unique
-    const timestamp = Date.now();
-    const fileName = `podcast_${timestamp}.mp3`;
-    const filePath = path.join(process.cwd(), 'public', 'audio', fileName);
-    
-    console.log("Création d'une copie du fichier audio d'exemple...");
-    console.log("Chemin du fichier:", filePath);
-    
-    // Créer le dossier audio s'il n'existe pas
-    try {
-      const audioDir = path.join(process.cwd(), 'public', 'audio');
-      await mkdir(audioDir, { recursive: true });
-      console.log("Dossier audio créé ou existant:", audioDir);
-    } catch (error) {
-      console.error("Erreur lors de la création du dossier audio:", error);
-      return `/audio/sample-podcast.mp3?t=${timestamp}`;
-    }
-    
-    // Copier le fichier sample-podcast.mp3 vers le nouveau fichier
-    try {
-      // Chemin du fichier source
-      const samplePath = path.join(process.cwd(), 'public', 'audio', 'sample-podcast.mp3');
-      console.log("Fichier source:", samplePath);
       
-      // Vérifier si le fichier source existe
-      const fs = require('fs/promises');
-      try {
-        const stats = await fs.stat(samplePath);
-        console.log("Fichier source existe:", stats.isFile());
-      } catch (statError) {
-        console.error("Erreur: Le fichier source n'existe pas:", statError);
-        return `/audio/sample-podcast.mp3?t=${timestamp}`;
-      }
+    case 'edge':
+      console.log("Utilisation d'Edge TTS pour la génération audio");
+      return await generateEdgeTTSAudio(transcript, params);
       
-      // Lire le fichier source
-      console.log("Lecture du fichier source...");
-      const data = await fs.readFile(samplePath);
-      console.log("Fichier lu avec succès, taille:", data.length, "octets");
-      
-      // Écrire le nouveau fichier
-      console.log("Écriture du nouveau fichier...");
-      await fs.writeFile(filePath, data);
-      console.log("Fichier écrit avec succès:", filePath);
-      
-      // Retourner l'URL du fichier audio
-      return `/audio/${fileName}`;
-    } catch (error) {
-      console.error("Erreur lors de la copie du fichier audio:", error);
-      return `/audio/sample-podcast.mp3?t=${timestamp}`;
-    }
-  } catch (error) {
-    console.error("Erreur lors de la génération de l'audio:", error);
-    return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+    default:
+      throw new Error(`Modèle TTS non supporté: ${params.ttsModel}`);
   }
 }
 
 // Fonction pour générer de l'audio avec OpenAI
 async function generateOpenAIAudio(transcript: string, params: GenerationParams, apiKey: string): Promise<string> {
   try {
-    console.log("Initialisation du client OpenAI pour la génération audio...");
-    console.log("Voix sélectionnées - Premier intervenant:", params.firstSpeakerVoice, "Second intervenant:", params.secondSpeakerVoice);
+    console.log('Initialisation de l\'API OpenAI pour la génération audio...');
     
     // Initialiser le client OpenAI
     const openai = new OpenAI({
-      apiKey: apiKey,
+      apiKey: apiKey
     });
     
-    // Extraire les dialogues de la transcription
+    // Extraire les dialogues
+    console.log('Extraction des dialogues de la transcription...');
     const dialogues = extractDialogues(transcript, params);
     
-    // Vérifier si des dialogues ont été extraits
     if (dialogues.length === 0) {
-      console.warn("Aucun dialogue n'a pu être extrait. Utilisation du texte brut.");
-      dialogues.push({ 
-        speaker: params.firstSpeaker, 
-        text: transcript.trim(),
-        voice: params.firstSpeakerVoice
-      });
+      console.warn('Aucun dialogue n\'a pu être extrait de la transcription. Utilisation de l\'audio d\'exemple.');
+      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
     }
     
-    // Traiter l'ensemble de la transcription
-    console.log(`Traitement de l'ensemble de la transcription (${dialogues.length} lignes de dialogue)...`);
-    
-    // Si le texte est trop long pour l'API OpenAI (limite de 4096 tokens),
-    // nous le divisons en segments
-    const MAX_CHARS_PER_SEGMENT = 4000; // Approximation pour rester sous la limite de tokens
+    console.log(`Dialogues extraits: ${dialogues.length}`);
     
     // Générer un nom de fichier unique
     const timestamp = Date.now();
-    const fileName = `podcast_${timestamp}.mp3`;
-    const filePath = path.join(process.cwd(), 'public', 'audio', fileName);
+    const audioFilename = `podcast_openai_${timestamp}.mp3`;
+    const audioPath = path.join(process.cwd(), 'public', 'audio', audioFilename);
     
-    console.log("Génération de l'audio avec OpenAI...");
-    
+    // Créer le répertoire audio s'il n'existe pas
     try {
-      // Créer le dossier audio s'il n'existe pas
-      const audioDir = path.join(process.cwd(), 'public', 'audio');
-      await mkdir(audioDir, { recursive: true });
+      await mkdir(path.join(process.cwd(), 'public', 'audio'), { recursive: true });
+    } catch (error) {
+      console.warn('Erreur lors de la création du répertoire audio. Utilisation de l\'audio d\'exemple.');
+      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+    }
+    
+    // Tester l'API OpenAI
+    try {
+      // Tester l'API OpenAI avec un petit texte
+      const testResponse = await openai.audio.speech.create({
+        model: "tts-1",
+        voice: "alloy",
+        input: "Test de l'API OpenAI"
+      });
       
-      // Générer l'audio pour chaque dialogue avec la voix appropriée
+      if (!testResponse) {
+        console.warn('Erreur lors de la connexion à l\'API OpenAI. Utilisation de l\'audio d\'exemple.');
+        return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+      }
+      
+      // Si le test a réussi, générer l'audio pour tous les dialogues
+      console.log('Test de l\'API OpenAI réussi. Génération de l\'audio pour tous les dialogues...');
+      
+      // Augmenter le nombre maximum de dialogues
+      const maxDialogues = Math.min(dialogues.length, 15); // Augmenter à 15 dialogues maximum
+      console.log(`Génération audio pour ${maxDialogues} dialogues sur ${dialogues.length} au total`);
+      
+      // Tableau pour stocker les buffers audio
       const audioBuffers: Buffer[] = [];
       
-      for (let i = 0; i < dialogues.length; i++) {
+      // Vérifier si le dernier dialogue semble être une conclusion
+      const hasProperConclusion = dialogues.length > 0 && 
+        (dialogues[dialogues.length - 1].text.toLowerCase().includes('merci') || 
+         dialogues[dialogues.length - 1].text.toLowerCase().includes('conclusion') ||
+         dialogues[dialogues.length - 1].text.toLowerCase().includes('au revoir') ||
+         dialogues[dialogues.length - 1].text.toLowerCase().includes('à bientôt'));
+      
+      // Générer l'audio pour chaque dialogue
+      for (let i = 0; i < maxDialogues; i++) {
         const dialogue = dialogues[i];
-        
-        // Vérifier si le texte est vide
-        if (!dialogue.text || dialogue.text.trim().length === 0) {
+        if (!dialogue || !dialogue.text.trim()) {
           console.log(`Dialogue ${i+1} vide, ignoré.`);
           continue;
         }
         
-        console.log(`Traitement du dialogue ${i+1}/${dialogues.length}:`);
-        console.log(`- Intervenant: ${dialogue.speaker}`);
-        console.log(`- Voix: ${dialogue.voice}`);
-        console.log(`- Texte: ${dialogue.text.substring(0, 100)}...`);
-        
-        // Diviser le texte en segments si nécessaire
-        const textSegments: string[] = [];
-        if (dialogue.text.length > MAX_CHARS_PER_SEGMENT) {
-          // Diviser le texte en segments
-          let remainingText = dialogue.text;
-          while (remainingText.length > 0) {
-            const segment = remainingText.substring(0, MAX_CHARS_PER_SEGMENT);
-            textSegments.push(segment);
-            remainingText = remainingText.substring(MAX_CHARS_PER_SEGMENT);
-          }
-        } else {
-          textSegments.push(dialogue.text);
+        // Nettoyer le texte du dialogue (enlever les balises, etc.)
+        let cleanText = dialogue.text
+          .replace(/<[^>]+>/g, '') // Supprimer les balises HTML
+          .replace(/^\*.*?\*/g, '') // Supprimer les textes entre *
+          .replace(/\*[^*]*\*/g, '') // Supprimer les textes entre * (au milieu du texte)
+          .trim();
+          
+        if (!cleanText) {
+          console.log(`Dialogue ${i+1} vide après nettoyage, ignoré.`);
+          continue;
         }
         
-        // Générer l'audio pour chaque segment
-        for (let j = 0; j < textSegments.length; j++) {
-          const segment = textSegments[j];
+        // Limiter la longueur du texte pour éviter les erreurs
+        if (cleanText.length > 4000) {
+          console.log(`Dialogue ${i+1} trop long (${cleanText.length} caractères), tronqué à 4000 caractères.`);
+          cleanText = cleanText.substring(0, 4000);
+        }
+        
+        // Déterminer la voix à utiliser en fonction du locuteur
+        let voice: string;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = dialogue.speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes(firstSpeakerLower) || firstSpeakerLower.includes(speakerLower)) {
+          voice = params.firstSpeakerVoice;
+          console.log(`Dialogue ${i+1} attribué au premier intervenant (${params.firstSpeaker}), voix: ${voice}`);
+        } else if (speakerLower.includes(secondSpeakerLower) || secondSpeakerLower.includes(speakerLower)) {
+          voice = params.secondSpeakerVoice;
+          console.log(`Dialogue ${i+1} attribué au second intervenant (${params.secondSpeaker}), voix: ${voice}`);
+        } else {
+          // Si on ne peut pas déterminer le locuteur, alterner les voix
+          voice = i % 2 === 0 ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+          console.log(`Dialogue ${i+1} attribué par alternance, voix: ${voice}`);
+        }
+        
+        console.log(`Génération audio pour dialogue ${i+1}/${maxDialogues}: ${dialogue.speaker} avec la voix ${voice}`);
+        console.log(`Texte: ${cleanText.substring(0, 100)}...`);
+        
+        try {
+          // Générer l'audio avec la langue spécifiée
+          const mp3Response = await openai.audio.speech.create({
+            model: "tts-1",
+            voice: voice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+            input: cleanText,
+            response_format: "mp3",
+            speed: 1.0
+          });
           
-          // Vérifier si le segment est vide
-          if (!segment || segment.trim().length === 0) {
-            console.log(`Segment ${j+1} vide, ignoré.`);
-            continue;
-          }
+          // Convertir la réponse en buffer
+          const buffer = Buffer.from(await mp3Response.arrayBuffer());
+          console.log(`Audio généré pour le dialogue ${i+1}, taille: ${buffer.length} octets`);
           
-          console.log(`Génération du segment ${j+1}/${textSegments.length} pour le dialogue ${i+1}/${dialogues.length} (${segment.length} caractères)...`);
-          
-          // Utiliser l'API OpenAI pour générer l'audio
-          console.log(`Appel à l'API OpenAI TTS avec la voix ${dialogue.voice}...`);
-          
-          try {
-            // Vérifier que la voix est valide
-            const validVoice = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"].includes(dialogue.voice) 
-              ? dialogue.voice 
-              : "alloy";
-            
-            if (validVoice !== dialogue.voice) {
-              console.warn(`Voix ${dialogue.voice} non reconnue, utilisation de la voix alloy par défaut.`);
-            }
-            
-            const mp3Response = await openai.audio.speech.create({
-              model: "tts-1",
-              voice: validVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
-              input: segment
-            });
-            
-            console.log(`Réponse reçue de l'API OpenAI TTS pour le segment ${j+1}`);
-            
-            // Convertir la réponse en buffer
-            const buffer = Buffer.from(await mp3Response.arrayBuffer());
-            console.log(`Buffer créé pour le segment ${j+1}, taille:`, buffer.length, "octets");
-            
-            // Ajouter le buffer à la liste
-            audioBuffers.push(buffer);
-          } catch (segmentError) {
-            console.error(`Erreur lors de la génération du segment ${j+1}:`, segmentError);
-            // Continuer avec le segment suivant
-          }
+          // Ajouter le buffer au tableau
+          audioBuffers.push(buffer);
+        } catch (dialogueError) {
+          console.error(`Erreur lors de la génération audio pour le dialogue ${i+1}:`, dialogueError);
+          // Continuer avec le dialogue suivant
         }
       }
       
-      // Vérifier si des segments audio ont été générés
+      // Ajouter une conclusion si nécessaire
+      if (!hasProperConclusion && dialogues.length > 0) {
+        console.log("Ajout d'une conclusion au podcast...");
+        
+        // Déterminer la voix pour la conclusion (utiliser la voix du premier intervenant)
+        const conclusionVoice = params.firstSpeakerVoice;
+        
+        // Texte de conclusion
+        const conclusionText = `Merci d'avoir écouté cet épisode de ${params.podcastName}. Nous espérons que cette discussion vous a été utile. À bientôt pour un nouvel épisode !`;
+        
+        try {
+          // Générer l'audio pour la conclusion
+          const conclusionResponse = await openai.audio.speech.create({
+            model: "tts-1",
+            voice: conclusionVoice as "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer",
+            input: conclusionText,
+            response_format: "mp3",
+            speed: 1.0
+          });
+          
+          // Convertir la réponse en buffer
+          const conclusionBuffer = Buffer.from(await conclusionResponse.arrayBuffer());
+          console.log(`Audio généré pour la conclusion, taille: ${conclusionBuffer.length} octets`);
+          
+          // Ajouter le buffer de conclusion au tableau
+          audioBuffers.push(conclusionBuffer);
+        } catch (conclusionError) {
+          console.error("Erreur lors de la génération audio pour la conclusion:", conclusionError);
+        }
+      }
+      
+      // Vérifier si des buffers ont été générés
       if (audioBuffers.length === 0) {
-        console.error("Aucun segment audio n'a pu être généré. Utilisation du fichier audio d'exemple.");
+        console.warn('Aucun audio n\'a pu être généré. Utilisation de l\'audio d\'exemple.');
         return `/audio/sample-podcast.mp3?t=${Date.now()}`;
       }
       
       // Combiner tous les buffers en un seul
-      console.log("Combinaison des segments audio...");
       const combinedBuffer = Buffer.concat(audioBuffers);
-      console.log("Buffer combiné, taille totale:", combinedBuffer.length, "octets");
+      console.log(`Audio combiné, taille totale: ${combinedBuffer.length} octets`);
       
       // Écrire le fichier audio
-      console.log("Écriture du fichier audio:", filePath);
-      await writeFile(filePath, combinedBuffer);
-      console.log("Fichier audio écrit avec succès");
+      await writeFile(audioPath, combinedBuffer);
       
-      // Retourner l'URL du fichier audio
-      return `/audio/${fileName}`;
-    } catch (apiError: any) {
-      console.error("Erreur lors de l'appel à l'API OpenAI:", apiError);
+      console.log(`Audio généré avec succès: ${audioPath}`);
+      return `/audio/${audioFilename}`;
       
-      // Afficher plus de détails sur l'erreur
-      if (apiError.error) {
-        console.error("Détails de l'erreur:", JSON.stringify(apiError.error, null, 2));
+    } catch (error: any) {
+      let errorMessage = 'Erreur lors de la génération audio avec OpenAI';
+      
+      if (error.status === 401) {
+        errorMessage = 'Clé API OpenAI invalide. Veuillez vérifier votre clé API.';
+      } else if (error.status === 429) {
+        errorMessage = 'Quota OpenAI dépassé. Veuillez mettre à niveau votre abonnement ou réessayer plus tard.';
+      } else if (error.message) {
+        errorMessage = `Erreur OpenAI: ${error.message}`;
       }
       
-      // En cas d'erreur, utiliser le fichier audio d'exemple
-      console.log("Utilisation du fichier audio d'exemple suite à une erreur");
-      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+      console.error(errorMessage, error);
+      throw new Error(errorMessage);
     }
   } catch (error) {
-    console.error("Erreur lors de la génération de l'audio avec OpenAI:", error);
+    console.error('Erreur lors de la génération audio avec OpenAI:', error);
     return `/audio/sample-podcast.mp3?t=${Date.now()}`;
   }
 }
@@ -635,102 +726,241 @@ async function generateEdgeTTSAudio(transcript: string, params: GenerationParams
 // Fonction pour générer de l'audio avec ElevenLabs
 async function generateElevenLabsAudio(transcript: string, params: GenerationParams, apiKey: string): Promise<string> {
   try {
-    console.log("Initialisation de l'API ElevenLabs pour la génération audio...");
+    console.log('Initialisation de l\'API ElevenLabs pour la génération audio...');
+    console.log(`Voix ElevenLabs sélectionnées - Premier intervenant: ${params.firstSpeakerElevenLabsVoiceId} Second intervenant: ${params.secondSpeakerElevenLabsVoiceId}`);
+    console.log(`Langue sélectionnée: ${params.language}`);
     
-    // Extraire les dialogues de la transcription
-    const dialogues = extractDialogues(transcript, params);
+    // Extraction des dialogues
+    console.log('Extraction des dialogues de la transcription...');
+    console.log(`Transcription brute: ${transcript.substring(0, 100)}...`);
     
-    // Vérifier si des dialogues ont été extraits
+    // Nettoyer la transcription
+    const cleanedTranscript = transcript
+      .replace(/^#+ .*$/gm, '') // Supprimer les titres Markdown
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Supprimer les textes en gras
+      .replace(/^_.*_$/gm, '') // Supprimer les lignes soulignées
+      .replace(/^\* /gm, '') // Supprimer les puces
+      .replace(/^Tagline:.*$/gm, ''); // Supprimer les taglines
+    
+    console.log(`Transcription nettoyée: ${cleanedTranscript.substring(0, 100)}...`);
+    
+    // Extraire les dialogues
+    const dialogues = extractDialogues(cleanedTranscript, params);
+    
     if (dialogues.length === 0) {
-      console.warn("Aucun dialogue n'a pu être extrait. Utilisation du texte brut.");
-      dialogues.push({ 
-        speaker: params.firstSpeaker, 
-        text: transcript.trim(),
-        voice: params.firstSpeakerVoice
-      });
+      console.warn('Aucun dialogue n\'a pu être extrait de la transcription. Utilisation de l\'audio d\'exemple.');
+      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
     }
     
-    // Traiter l'ensemble de la transcription
-    console.log(`Traitement de l'ensemble de la transcription (${dialogues.length} lignes de dialogue)...`);
-    
-    // Combiner tous les dialogues en un seul texte
-    const fullText = dialogues.map(d => d.text).join(' ');
-    console.log("Longueur du texte complet:", fullText.length, "caractères");
-    
-    // Vérifier si le texte est vide
-    if (fullText.trim().length === 0) {
-      console.error("Le texte extrait est vide. Utilisation d'un texte par défaut.");
-      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+    console.log(`Dialogues extraits: ${dialogues.length}`);
+    for (let i = 0; i < Math.min(3, dialogues.length); i++) {
+      console.log(`Dialogue ${i+1}: ${dialogues[i].speaker} (${dialogues[i].voice}) - ${dialogues[i].text.substring(0, 50)}...`);
     }
     
     // Générer un nom de fichier unique
     const timestamp = Date.now();
-    const fileName = `podcast_elevenlabs_${timestamp}.mp3`;
-    const filePath = path.join(process.cwd(), 'public', 'audio', fileName);
+    const audioFilename = `podcast_elevenlabs_${timestamp}.mp3`;
+    const audioPath = path.join(process.cwd(), 'public', 'audio', audioFilename);
     
-    console.log("Génération de l'audio avec ElevenLabs...");
-    
+    // Créer le répertoire audio s'il n'existe pas
     try {
-      // Créer le dossier audio s'il n'existe pas
-      const audioDir = path.join(process.cwd(), 'public', 'audio');
-      await mkdir(audioDir, { recursive: true });
-      
-      // Pour cette démonstration, nous utilisons la voix "Rachel" d'ElevenLabs
-      // Dans une implémentation complète, nous pourrions permettre à l'utilisateur de choisir la voix
-      const voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel voice ID
-      
-      // Paramètres de la voix
-      const voiceSettings = {
-        stability: 0.5,
-        similarity_boost: 0.75
-      };
-      
-      console.log("Appel à l'API REST ElevenLabs...");
-      
-      // Appel direct à l'API REST d'ElevenLabs
-      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-        method: 'POST',
+      await mkdir(path.join(process.cwd(), 'public', 'audio'), { recursive: true });
+    } catch (error) {
+      console.warn('Erreur lors de la création du répertoire audio. Utilisation de l\'audio d\'exemple.');
+      return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+    }
+    
+    // Vérifier si l'API ElevenLabs est disponible
+    try {
+      const testResponse = await fetch('https://api.elevenlabs.io/v1/user', {
+        method: 'GET',
         headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'xi-api-key': apiKey
-        },
-        body: JSON.stringify({
-          text: fullText,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: voiceSettings
-        })
+        }
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Erreur API ElevenLabs: ${response.status} ${response.statusText}`, errorText);
-        throw new Error(`Erreur API ElevenLabs: ${response.status} ${response.statusText}`);
+      if (!testResponse.ok) {
+        let errorMessage = `Erreur API ElevenLabs: ${testResponse.status} ${testResponse.statusText}`;
+        
+        try {
+          const errorData = await testResponse.json();
+          if (errorData.detail && errorData.detail.status === 'quota_exceeded') {
+            errorMessage = 'Quota ElevenLabs dépassé. Veuillez mettre à niveau votre abonnement ou réessayer plus tard.';
+          } else if (errorData.detail && errorData.detail.status === 'detected_unusual_activity') {
+            errorMessage = 'Activité inhabituelle détectée par ElevenLabs. Veuillez utiliser un autre service TTS ou contacter le support ElevenLabs.';
+          }
+        } catch (e) {
+          // Ignorer les erreurs de parsing JSON
+        }
+        
+        console.warn(errorMessage + ' Utilisation de l\'audio d\'exemple.');
+        return `/audio/sample-podcast.mp3?t=${Date.now()}`;
       }
       
-      console.log("Réponse reçue de l'API ElevenLabs");
+      // Si le test a réussi, générer l'audio pour tous les dialogues
+      console.log('Test de l\'API ElevenLabs réussi. Génération de l\'audio pour tous les dialogues...');
       
-      // Convertir la réponse en buffer
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      console.log("Buffer créé, taille:", buffer.length, "octets");
+      // Limiter le nombre de dialogues pour éviter les problèmes de quota
+      const maxDialogues = Math.min(dialogues.length, 5); // Limiter à 5 dialogues maximum
+      console.log(`Génération audio pour ${maxDialogues} dialogues sur ${dialogues.length} au total`);
+      
+      // Tableau pour stocker les buffers audio
+      const audioBuffers: Buffer[] = [];
+      
+      // Générer l'audio pour chaque dialogue
+      for (let i = 0; i < maxDialogues; i++) {
+        const dialogue = dialogues[i];
+        if (!dialogue || !dialogue.text.trim()) {
+          console.log(`Dialogue ${i+1} vide, ignoré.`);
+          continue;
+        }
+        
+        // Nettoyer le texte du dialogue (enlever les balises, etc.)
+        let cleanText = dialogue.text
+          .replace(/<[^>]+>/g, '') // Supprimer les balises HTML
+          .replace(/^\*.*?\*/g, '') // Supprimer les textes entre *
+          .replace(/\*[^*]*\*/g, '') // Supprimer les textes entre * (au milieu du texte)
+          .trim();
+          
+        if (!cleanText) {
+          console.log(`Dialogue ${i+1} vide après nettoyage, ignoré.`);
+          continue;
+        }
+        
+        // Limiter la longueur du texte pour éviter les erreurs
+        if (cleanText.length > 5000) {
+          console.log(`Dialogue ${i+1} trop long (${cleanText.length} caractères), tronqué à 5000 caractères.`);
+          cleanText = cleanText.substring(0, 5000);
+        }
+        
+        // Déterminer la voix à utiliser en fonction du locuteur
+        let voiceId: string;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = dialogue.speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes(firstSpeakerLower) || firstSpeakerLower.includes(speakerLower)) {
+          voiceId = params.firstSpeakerElevenLabsVoiceId;
+          console.log(`Dialogue ${i+1} attribué au premier intervenant (${params.firstSpeaker}), voix ElevenLabs: ${voiceId}`);
+        } else if (speakerLower.includes(secondSpeakerLower) || secondSpeakerLower.includes(speakerLower)) {
+          voiceId = params.secondSpeakerElevenLabsVoiceId;
+          console.log(`Dialogue ${i+1} attribué au second intervenant (${params.secondSpeaker}), voix ElevenLabs: ${voiceId}`);
+        } else {
+          // Si on ne peut pas déterminer le locuteur, alterner les voix
+          voiceId = i % 2 === 0 ? params.firstSpeakerElevenLabsVoiceId : params.secondSpeakerElevenLabsVoiceId;
+          console.log(`Dialogue ${i+1} attribué par alternance, voix ElevenLabs: ${voiceId}`);
+        }
+        
+        console.log(`Génération audio pour dialogue ${i+1}/${maxDialogues}: ${dialogue.speaker}`);
+        console.log(`Texte: ${cleanText.substring(0, 100)}...`);
+        
+        try {
+          // Appel à l'API ElevenLabs
+          console.log(`Appel à l'API REST ElevenLabs pour le dialogue ${i+1}...`);
+          
+          // Mapper la langue sélectionnée au format ElevenLabs
+          // ElevenLabs supporte: en, de, es, fr, hi, it, ja, ko, pl, pt, ru, tr, zh
+          let modelId = 'eleven_multilingual_v2';
+          
+          // Déterminer la langue pour ElevenLabs
+          const languageMap: Record<string, string> = {
+            'fr': 'fr', // Français
+            'en': 'en', // Anglais
+            'de': 'de', // Allemand
+            'es': 'es', // Espagnol
+            'it': 'it', // Italien
+            'pt': 'pt', // Portugais
+            'nl': 'en', // Néerlandais (fallback à l'anglais)
+            'ru': 'ru', // Russe
+            'zh': 'zh', // Chinois
+            'ja': 'ja'  // Japonais
+          };
+          
+          // Obtenir le code de langue pour ElevenLabs ou utiliser l'anglais par défaut
+          const elevenLabsLanguage = languageMap[params.language] || 'en';
+          console.log(`Langue ElevenLabs utilisée: ${elevenLabsLanguage}`);
+          
+          const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'Content-Type': 'application/json',
+              'xi-api-key': apiKey
+            },
+            body: JSON.stringify({
+              text: cleanText,
+              model_id: modelId,
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75
+              }
+            })
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Erreur API ElevenLabs: ${response.status} ${response.statusText}`, errorText);
+            
+            // Si nous avons déjà généré au moins un segment audio, continuons avec ce que nous avons
+            if (audioBuffers.length > 0) {
+              console.log(`Erreur pour le dialogue ${i+1}, mais nous avons déjà ${audioBuffers.length} segments. Continuons avec ce que nous avons.`);
+              break;
+            }
+            
+            // Sinon, utiliser l'audio d'exemple
+            console.warn(`Erreur pour le dialogue ${i+1} et aucun segment généré. Utilisation de l'audio d'exemple.`);
+            return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+          }
+          
+          console.log(`Réponse reçue de l'API ElevenLabs pour le dialogue ${i+1}`);
+          
+          // Récupérer le buffer audio
+          const buffer = Buffer.from(await response.arrayBuffer());
+          console.log(`Audio généré pour le dialogue ${i+1}, taille: ${buffer.length} octets`);
+          
+          // Ajouter le buffer au tableau
+          audioBuffers.push(buffer);
+        } catch (dialogueError) {
+          console.error(`Erreur lors de la génération audio pour le dialogue ${i+1}:`, dialogueError);
+          
+          // Si nous avons déjà généré au moins un segment audio, continuons avec ce que nous avons
+          if (audioBuffers.length > 0) {
+            console.log(`Erreur pour le dialogue ${i+1}, mais nous avons déjà ${audioBuffers.length} segments. Continuons avec ce que nous avons.`);
+            break;
+          }
+          
+          // Sinon, utiliser l'audio d'exemple
+          console.warn(`Erreur pour le dialogue ${i+1} et aucun segment généré. Utilisation de l'audio d'exemple.`);
+          return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+        }
+      }
+      
+      // Vérifier si des buffers ont été générés
+      if (audioBuffers.length === 0) {
+        console.warn('Aucun audio n\'a pu être généré. Utilisation de l\'audio d\'exemple.');
+        return `/audio/sample-podcast.mp3?t=${Date.now()}`;
+      }
+      
+      // Combiner tous les buffers en un seul
+      const combinedBuffer = Buffer.concat(audioBuffers);
+      console.log(`Audio combiné, taille totale: ${combinedBuffer.length} octets`);
       
       // Écrire le fichier audio
-      console.log("Écriture du fichier audio:", filePath);
-      await writeFile(filePath, buffer);
-      console.log("Fichier audio écrit avec succès");
+      await writeFile(audioPath, combinedBuffer);
       
-      // Retourner l'URL du fichier audio
-      return `/audio/${fileName}`;
-    } catch (apiError: any) {
-      console.error("Erreur lors de l'appel à l'API ElevenLabs:", apiError);
+      console.log(`Audio généré avec succès: ${audioPath}`);
+      return `/audio/${audioFilename}`;
       
-      // En cas d'erreur, utiliser le fichier audio d'exemple
-      console.log("Utilisation du fichier audio d'exemple suite à une erreur");
+    } catch (error) {
+      console.error('Erreur lors de la vérification de l\'API ElevenLabs:', error);
+      console.warn('Utilisation de l\'audio d\'exemple suite à une erreur de connexion.');
       return `/audio/sample-podcast.mp3?t=${Date.now()}`;
     }
   } catch (error) {
-    console.error("Erreur lors de la génération de l'audio avec ElevenLabs:", error);
+    console.error('Erreur lors de la génération audio avec ElevenLabs:', error);
     return `/audio/sample-podcast.mp3?t=${Date.now()}`;
   }
 }
@@ -740,163 +970,164 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
   console.log("Extraction des dialogues de la transcription...");
   console.log("Transcription brute:", transcript.substring(0, 200) + "...");
   
-  // Nettoyer la transcription des éventuels en-têtes ou formatages Markdown
-  let cleanedTranscript = transcript
-    .replace(/^#.*$/gm, '') // Supprimer les titres Markdown
+  // Nettoyer la transcription
+  const cleanedTranscript = transcript
+    .replace(/^#+\s+.*$/gm, '') // Supprimer les titres Markdown
     .replace(/^\*\*.*\*\*$/gm, '') // Supprimer les lignes en gras
     .replace(/^_.*_$/gm, '') // Supprimer les lignes soulignées
-    .replace(/^\s*[-*]\s+/gm, '') // Supprimer les listes à puces
+    .replace(/\s*[-*]\s+/gm, '') // Supprimer les listes à puces
     .replace(/\*\*.*?\*\*/g, '') // Supprimer le texte en gras
     .replace(/\*Tagline:.*?\*/g, '') // Supprimer la tagline
     .trim();
   
   console.log("Transcription nettoyée:", cleanedTranscript.substring(0, 200) + "...");
   
+  // Tableau pour stocker les dialogues extraits
   const dialogues: { speaker: string; text: string; voice: string }[] = [];
-  let hasMatches = false;
   
-  // 1. Essayer d'extraire les dialogues au format <Person1>...</Person1>
-  const personRegex = /<Person(\d+)>(.*?)<\/Person\d+>/g;
-  let match;
+  // Essayer différents formats de dialogue
   
-  while ((match = personRegex.exec(cleanedTranscript)) !== null) {
-    hasMatches = true;
-    const speakerNumber = parseInt(match[1]);
-    const text = match[2].trim();
-    
-    if (text.length > 0) {
-      // Déterminer la voix à utiliser en fonction du numéro de l'intervenant
-      const speaker = speakerNumber === 1 ? params.firstSpeaker : params.secondSpeaker;
-      const voice = speakerNumber === 1 ? params.firstSpeakerVoice : params.secondSpeakerVoice;
-      
-      dialogues.push({ speaker, text, voice });
-    }
+  // Format 1: <Person1>Texte</Person1>
+  // Utiliser une regex compatible avec les anciennes versions de JS
+  const personRegex = /<(Person\d+|Présentateur|Expert)>([\s\S]*?)<\/\1>/g;
+  let personMatch;
+  let personMatches = [];
+  
+  while ((personMatch = personRegex.exec(cleanedTranscript)) !== null) {
+    personMatches.push(personMatch);
   }
   
-  // 2. Si aucun dialogue n'a été trouvé au format <Person1>, essayer le format avec *Nom:* texte
-  if (!hasMatches) {
-    console.log("Aucun dialogue trouvé au format <Person1>. Essai du format avec *Nom:* texte");
+  if (personMatches.length > 0) {
+    console.log("Dialogues trouvés au format <Person1>.");
     
-    // Format avec *Présentateur:* ou *Expert:* ou tout autre nom suivi de :*
-    const speakerRegex = /\*([^:*]+)\s*:\*\s*(.*?)(?=\*[^:*]+\s*:\*|$)/g;
-    while ((match = speakerRegex.exec(cleanedTranscript)) !== null) {
-      hasMatches = true;
-      const speaker = match[1].trim();
+    for (const match of personMatches) {
+      const speaker = match[1];
       const text = match[2].trim();
       
-      if (text.length > 0) {
-        // Déterminer la voix en fonction du rôle
-        const isFirstSpeaker = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase());
-        const voice = isFirstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+      if (text) {
+        const voice = speaker === "Person1" || speaker === params.firstSpeaker || speaker.includes("Présentateur") 
+          ? params.firstSpeakerVoice 
+          : params.secondSpeakerVoice;
+        
         dialogues.push({ speaker, text, voice });
       }
     }
+    
+    return dialogues;
   }
   
-  // 3. Si toujours aucun dialogue, essayer le format avec Nom: texte (sans astérisques)
-  if (!hasMatches) {
-    console.log("Aucun dialogue trouvé au format *Nom:*. Essai du format avec Nom: texte");
-    
-    // Format avec Présentateur: ou Expert: ou tout autre nom suivi de :
-    const lines = cleanedTranscript.split('\n');
-    const simpleRegex = /^([^:]+)\s*:\s*(.+)$/;
-    
-    for (const line of lines) {
-      const match = line.match(simpleRegex);
-      if (match) {
-        hasMatches = true;
-        const speaker = match[1].trim();
-        const text = match[2].trim();
-        
-        if (text.length > 0) {
-          // Déterminer la voix en fonction du rôle
-          const isFirstSpeaker = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase());
-          const voice = isFirstSpeaker ? params.firstSpeakerVoice : params.secondSpeakerVoice;
-          dialogues.push({ speaker, text, voice });
-        }
-      }
-    }
+  // Format 2: *Nom:* texte
+  // Utiliser une regex compatible avec les anciennes versions de JS
+  const nameColonRegex = /\*(.*?):\*([\s\S]*?)(?=\*.*?:\*|$)/g;
+  let nameColonMatch;
+  let nameColonMatches = [];
+  
+  while ((nameColonMatch = nameColonRegex.exec(cleanedTranscript)) !== null) {
+    nameColonMatches.push(nameColonMatch);
   }
   
-  // 4. Si toujours aucun dialogue, essayer de diviser par lignes
-  if (!hasMatches) {
-    console.log("Aucun dialogue trouvé dans les formats connus. Essai de division par lignes");
+  if (nameColonMatches.length > 0) {
+    console.log("Dialogues trouvés au format *Nom:* texte");
     
-    const lines = cleanedTranscript.split('\n').filter(line => line.trim() !== '');
-    let currentSpeaker = params.firstSpeaker;
-    let currentVoice = params.firstSpeakerVoice;
-    
-    for (const line of lines) {
-      if (line.trim().length > 0) {
-        // Alterner entre les deux intervenants
-        dialogues.push({ 
-          speaker: currentSpeaker, 
-          text: line.trim(),
-          voice: currentVoice
-        });
-        
-        // Changer d'intervenant pour la prochaine ligne
-        if (currentSpeaker === params.firstSpeaker) {
-          currentSpeaker = params.secondSpeaker;
-          currentVoice = params.secondSpeakerVoice;
-        } else {
-          currentSpeaker = params.firstSpeaker;
-          currentVoice = params.firstSpeakerVoice;
-        }
-      }
-    }
-    
-    if (dialogues.length > 0) {
-      hasMatches = true;
-    }
-  }
-  
-  // 5. Si toujours aucun dialogue, utiliser le texte complet
-  if (!hasMatches || dialogues.length === 0) {
-    console.log("Aucune méthode d'extraction n'a fonctionné. Utilisation du texte complet");
-    
-    // Diviser le texte en paragraphes
-    const paragraphs = cleanedTranscript.split('\n\n').filter(p => p.trim().length > 0);
-    
-    if (paragraphs.length > 1) {
-      // Alterner les paragraphes entre les deux intervenants
-      let currentSpeaker = params.firstSpeaker;
-      let currentVoice = params.firstSpeakerVoice;
+    for (const match of nameColonMatches) {
+      const speaker = match[1].trim();
+      const text = match[2].trim();
       
-      for (const paragraph of paragraphs) {
-        if (paragraph.trim().length > 0) {
-          dialogues.push({ 
-            speaker: currentSpeaker, 
-            text: paragraph.trim(),
-            voice: currentVoice
-          });
-          
-          // Changer d'intervenant pour le prochain paragraphe
-          if (currentSpeaker === params.firstSpeaker) {
-            currentSpeaker = params.secondSpeaker;
-            currentVoice = params.secondSpeakerVoice;
-          } else {
-            currentSpeaker = params.firstSpeaker;
-            currentVoice = params.firstSpeakerVoice;
-          }
-        }
+      if (text) {
+        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
+          ? params.firstSpeakerVoice 
+          : params.secondSpeakerVoice;
+        
+        dialogues.push({ speaker, text, voice });
       }
-    } else {
-      // Utiliser le texte complet
-      dialogues.push({ 
-        speaker: params.firstSpeaker, 
-        text: cleanedTranscript,
-        voice: params.firstSpeakerVoice
-      });
     }
+    
+    return dialogues;
   }
   
-  console.log(`Dialogues extraits: ${dialogues.length}`);
-  dialogues.forEach((d, i) => {
-    if (i < 3) {
-      console.log(`Dialogue ${i+1}: ${d.speaker} (${d.voice}) - ${d.text.substring(0, 50)}...`);
+  // Format 3: Nom: texte
+  // Utiliser une regex compatible avec les anciennes versions de JS
+  const simpleColonRegex = /(Présentateur|Expert|.*?):\s*([\s\S]*?)(?=(?:Présentateur|Expert|.*?):|$)/g;
+  let simpleColonMatch;
+  let simpleColonMatches = [];
+  
+  while ((simpleColonMatch = simpleColonRegex.exec(cleanedTranscript)) !== null) {
+    simpleColonMatches.push(simpleColonMatch);
+  }
+  
+  if (simpleColonMatches.length > 0) {
+    console.log("Dialogues trouvés au format Nom: texte");
+    
+    for (const match of simpleColonMatches) {
+      const speaker = match[1].trim();
+      const text = match[2].trim();
+      
+      if (text) {
+        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
+          ? params.firstSpeakerVoice 
+          : params.secondSpeakerVoice;
+        
+        dialogues.push({ speaker, text, voice });
+      }
     }
-  });
+    
+    return dialogues;
+  }
+  
+  // Format 4: *<Présentateur>Texte ou <Présentateur>Texte
+  // Utiliser une regex compatible avec les anciennes versions de JS
+  const taggedSpeakerRegex = /(?:\*)?<(Présentateur|Expert|.*?)>([\s\S]*?)(?=(?:\*)?<(?:Présentateur|Expert|.*?)>|$)/g;
+  let taggedSpeakerMatch;
+  let taggedSpeakerMatches = [];
+  
+  while ((taggedSpeakerMatch = taggedSpeakerRegex.exec(cleanedTranscript)) !== null) {
+    taggedSpeakerMatches.push(taggedSpeakerMatch);
+  }
+  
+  if (taggedSpeakerMatches.length > 0) {
+    console.log("Dialogues trouvés au format <Présentateur>Texte");
+    
+    for (const match of taggedSpeakerMatches) {
+      const speaker = match[1].trim();
+      const text = match[2].trim();
+      
+      if (text) {
+        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
+          ? params.firstSpeakerVoice 
+          : params.secondSpeakerVoice;
+        
+        dialogues.push({ speaker, text, voice });
+      }
+    }
+    
+    return dialogues;
+  }
+  
+  // Si aucun format connu n'est trouvé, essayer de diviser par lignes
+  console.log("Aucun dialogue trouvé dans les formats connus. Essai de division par lignes");
+  
+  // Diviser la transcription en lignes non vides
+  const lines = cleanedTranscript
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+  
+  // Alterner les intervenants pour chaque ligne
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Déterminer le locuteur en fonction de l'indice (pair/impair)
+    const speaker = i % 2 === 0 ? params.firstSpeaker : params.secondSpeaker;
+    const voice = i % 2 === 0 ? params.firstSpeakerVoice : params.secondSpeakerVoice;
+    
+    dialogues.push({ speaker, text: line, voice });
+  }
+  
+  // Afficher les dialogues extraits
+  console.log(`Dialogues extraits: ${dialogues.length}`);
+  for (let i = 0; i < Math.min(3, dialogues.length); i++) {
+    console.log(`Dialogue ${i+1}: ${dialogues[i].speaker} (${dialogues[i].voice}) - ${dialogues[i].text.substring(0, 50)}...`);
+  }
   
   return dialogues;
 }
@@ -905,37 +1136,48 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
 async function generatePodcast(source: ContentSource, params: GenerationParams, apiConfig: ApiConfig) {
   try {
     console.log("Début de la génération du podcast...");
-    console.log("Configuration API reçue:", JSON.stringify({
-      openai: apiConfig.openai ? "Configuré" : "Non configuré",
-      elevenlabs: apiConfig.elevenlabs ? "Configuré" : "Non configuré",
-      gemini: apiConfig.gemini ? "Configuré" : "Non configuré"
-    }));
     
-    // Générer la transcription
+    // Étape 1: Génération de la transcription
     console.log("Étape 1: Génération de la transcription...");
     const transcript = await generateTranscript(source, params, apiConfig);
     
-    // Générer l'audio à partir de la transcription
+    // Étape 2: Génération de l'audio
     console.log("Étape 2: Génération de l'audio...");
+    console.log("=== GÉNÉRATION AUDIO ===");
     const audioUrl = await generateAudio(transcript, params, apiConfig);
     
     console.log("Podcast généré avec succès!");
     console.log("URL audio:", audioUrl);
     
-    // Retourner la réponse
     return {
-      transcript,
+      success: true,
       audioUrl,
-      duration: 120, // Durée estimée en secondes
+      transcript,
+      error: null
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erreur lors de la génération du podcast:", error);
     
-    // En cas d'erreur, retourner un exemple
+    // Déterminer le type d'erreur pour un message plus précis
+    let errorMessage = "Une erreur est survenue lors de la génération du podcast.";
+    
+    if (error.message) {
+      if (error.message.includes("API key")) {
+        errorMessage = "Clé API invalide ou manquante. Veuillez vérifier vos paramètres.";
+      } else if (error.message.includes("quota") || error.message.includes("rate limit")) {
+        errorMessage = "Quota API dépassé. Veuillez réessayer plus tard ou utiliser une autre clé API.";
+      } else if (error.message.includes("network") || error.message.includes("timeout")) {
+        errorMessage = "Erreur réseau. Veuillez vérifier votre connexion et réessayer.";
+      } else {
+        errorMessage = `Erreur: ${error.message}`;
+      }
+    }
+    
     return {
-      transcript: getTranscriptExample(params.language, params),
+      success: false,
       audioUrl: `/audio/sample-podcast.mp3?t=${Date.now()}`,
-      duration: 120,
+      transcript: "",
+      error: errorMessage
     };
   }
 }
@@ -944,35 +1186,44 @@ export async function POST(request: NextRequest) {
   try {
     console.log("Requête API reçue");
     
-    // Récupération des données de la requête
-    const body = await request.json();
-    const { source, params, apiConfig } = body;
+    // Récupérer les données de la requête
+    const data = await request.json();
+    const { source, params, apiConfig } = data;
     
     console.log("Données reçues:");
     console.log("- Source:", source ? source.type : "Non fournie");
     console.log("- Paramètres:", params ? "Fournis" : "Non fournis");
     console.log("- Configuration API:", apiConfig ? "Fournie" : "Non fournie");
     
-    // Validation des données
+    // Vérifier que les données nécessaires sont présentes
     if (!source || !params) {
-      console.error("Données manquantes: source ou params");
       return NextResponse.json(
-        { error: 'Les données source et params sont requises' },
+        { 
+          success: false, 
+          error: "Données manquantes: source ou paramètres" 
+        }, 
         { status: 400 }
       );
     }
     
-    // Génération du podcast
     console.log("Début de la génération du podcast...");
-    const result = await generatePodcast(source, params, apiConfig || {});
     
-    // Retourne la réponse
+    // Générer le podcast
+    const result = await generatePodcast(source, params, apiConfig);
+    
+    // Retourner la réponse
     console.log("Réponse envoyée");
     return NextResponse.json(result);
-  } catch (error) {
-    console.error('Erreur lors de la génération du podcast:', error);
+    
+  } catch (error: any) {
+    console.error("Erreur lors du traitement de la requête:", error);
+    
     return NextResponse.json(
-      { error: 'Erreur lors de la génération du podcast' },
+      { 
+        success: false, 
+        error: `Erreur serveur: ${error.message || "Erreur inconnue"}`,
+        audioUrl: `/audio/sample-podcast.mp3?t=${Date.now()}`
+      }, 
       { status: 500 }
     );
   }
