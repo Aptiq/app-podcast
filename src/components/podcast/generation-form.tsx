@@ -50,6 +50,7 @@ export default function GenerationForm() {
   const [progress, setProgress] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [hasKeys, setHasKeys] = useState(false);
+  const [contentLength, setContentLength] = useState(0);
   
   // Vérification des clés API uniquement côté client
   useEffect(() => {
@@ -71,8 +72,8 @@ export default function GenerationForm() {
       language: 'fr',
       ttsModel: 'openai',
       creativity: 0.7,
-      firstSpeakerVoice: 'alloy',
-      secondSpeakerVoice: 'alloy',
+      firstSpeakerVoice: 'nova',
+      secondSpeakerVoice: 'echo',
       firstSpeakerElevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM', // Rachel
       secondSpeakerElevenLabsVoiceId: 'ErXwobaYiN019PkySvjV', // Antoni
     },
@@ -232,27 +233,33 @@ export default function GenerationForm() {
                 name="content"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      {form.watch('contentType') === 'text' ? 'Texte' : 'URL'}
-                    </FormLabel>
+                    <FormLabel>Contenu</FormLabel>
                     <FormControl>
-                      {form.watch('contentType') === 'text' ? (
-                        <Textarea
-                          placeholder={form.watch('contentType') === 'text' 
-                            ? "Entrez votre texte ici..." 
-                            : "https://example.com"}
-                          className="min-h-32"
-                          disabled={isLoading}
-                          {...field}
-                        />
-                      ) : (
-                        <Input
-                          placeholder="https://example.com"
-                          disabled={isLoading}
-                          {...field}
-                        />
-                      )}
+                      <Textarea
+                        placeholder="Entrez le contenu à transformer en podcast..."
+                        className="min-h-[200px]"
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          // Mettre à jour le compteur de caractères
+                          setContentLength(e.target.value.length);
+                        }}
+                        disabled={isLoading}
+                      />
                     </FormControl>
+                    <div className="flex justify-between">
+                      <FormDescription>
+                        Entrez le contenu que vous souhaitez transformer en podcast.
+                      </FormDescription>
+                      <div className={`text-sm ${contentLength > 8000 ? 'text-red-500 font-semibold' : 'text-gray-500'}`}>
+                        {contentLength} / 8000 caractères
+                        {contentLength > 8000 && (
+                          <span className="ml-2">
+                            (Le texte sera tronqué à 8000 caractères)
+                          </span>
+                        )}
+                      </div>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -455,23 +462,18 @@ export default function GenerationForm() {
                   <FormItem>
                     <FormLabel>Niveau de créativité</FormLabel>
                     <FormControl>
-                      <div className="space-y-2">
-                        <Slider
-                          min={0}
-                          max={1}
-                          step={0.1}
-                          value={[field.value]}
-                          onValueChange={([value]) => field.onChange(value)}
-                          disabled={isLoading}
-                        />
-                        <div className="flex justify-between text-sm text-gray-500">
-                          <span>Factuel (0)</span>
-                          <span>{field.value}</span>
-                          <span>Créatif (1)</span>
-                        </div>
-                      </div>
+                      <Slider
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        defaultValue={[field.value]}
+                        onValueChange={(value) => field.onChange(value[0])}
+                        disabled={isLoading}
+                      />
                     </FormControl>
-                    <FormMessage />
+                    <FormDescription>
+                      Ajustez le niveau de créativité du contenu généré.
+                    </FormDescription>
                   </FormItem>
                 )}
               />

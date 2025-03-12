@@ -62,6 +62,7 @@ export type GenerationParams = {
   // Paramètres avancés
   ttsModel: 'openai' | 'elevenlabs' | 'edge';
   creativity: number; // Niveau de créativité (0-1)
+  useAdvancedModel?: boolean; // Utiliser GPT-4 au lieu de GPT-3.5 pour la génération
   
   // Voix des intervenants (OpenAI)
   firstSpeakerVoice: OpenAIVoice; // Voix du premier intervenant

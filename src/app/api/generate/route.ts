@@ -89,7 +89,11 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
     
     // Limiter la taille du contenu source pour éviter les dépassements de contexte
     let contentToUse = source.content;
-    const maxContentLength = 8000; // Limite approximative pour éviter de dépasser la limite de tokens
+    
+    // Déterminer la limite de caractères en fonction du modèle
+    // GPT-4 a une limite de contexte plus élevée que GPT-3.5
+    const useGpt4 = params.useAdvancedModel === true;
+    const maxContentLength = useGpt4 ? 20000 : 12000; // Augmenter les limites
     
     if (contentToUse.length > maxContentLength) {
       console.warn(`Contenu source trop long (${contentToUse.length} caractères), tronqué à ${maxContentLength} caractères.`);
@@ -105,14 +109,66 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
     switch (params.language) {
       case 'fr':
         systemPrompt = "Tu es un expert en création de podcasts. Tu dois générer un script de podcast naturel et engageant en français.";
+        
+        // Définir les instructions spécifiques au style
+        let styleInstructions = "";
+        switch (params.style) {
+          case 'conversational':
+            styleInstructions = `
+            Le style doit être conversationnel et détendu, comme une discussion entre amis.
+            - Utilise un langage informel et des expressions familières
+            - Inclus des réactions spontanées et des marques d'écoute active
+            - Les intervenants peuvent se couper la parole occasionnellement
+            - Ajoute des anecdotes personnelles et des exemples concrets
+            `;
+            break;
+          case 'debate':
+            styleInstructions = `
+            Le style doit être celui d'un débat structuré avec des points de vue différents.
+            - Les intervenants doivent présenter des arguments opposés ou complémentaires
+            - Inclus des questions rhétoriques et des remises en question
+            - Utilise un ton plus formel et des termes précis
+            - Les intervenants doivent défendre leurs positions avec des faits et des exemples
+            - Inclus quelques moments de désaccord respectueux
+            `;
+            break;
+          case 'interview':
+            styleInstructions = `
+            Le style doit être celui d'une interview professionnelle.
+            - Le premier intervenant (${params.firstSpeaker}) pose principalement des questions
+            - Le second intervenant (${params.secondSpeaker}) est l'expert qui répond en détail
+            - Inclus des questions de suivi et d'approfondissement
+            - Le ton doit être professionnel mais accessible
+            - L'interviewer doit guider la conversation de manière structurée
+            `;
+            break;
+          case 'educational':
+            styleInstructions = `
+            Le style doit être éducatif et explicatif.
+            - Présente les informations de manière claire et pédagogique
+            - Utilise des métaphores et des analogies pour expliquer les concepts complexes
+            - Les intervenants doivent se compléter pour approfondir les explications
+            - Inclus des résumés réguliers des points importants
+            - Le ton doit être instructif mais engageant
+            `;
+            break;
+          default:
+            styleInstructions = "Le style doit être naturel et engageant.";
+        }
+        
         userPrompt = `
         Génère un script de podcast entre deux personnes sur le sujet suivant:
         
         ${contentToUse}
         
         Format du script:
-        <Person1>Texte de la première personne</Person1>
-        <Person2>Texte de la deuxième personne</Person2>
+        IMPORTANT: Utilise UNIQUEMENT ce format exact pour le script, sans ajouter de métadonnées ou d'informations supplémentaires:
+        
+        <${params.firstSpeaker}>Texte du premier intervenant</${params.firstSpeaker}>
+        <${params.secondSpeaker}>Texte du second intervenant</${params.secondSpeaker}>
+        <${params.firstSpeaker}>Texte du premier intervenant</${params.firstSpeaker}>
+        
+        Et ainsi de suite. N'ajoute pas de titres, de descriptions ou d'autres éléments en dehors de ce format.
         
         Détails du podcast:
         - Nom du podcast: ${params.podcastName}
@@ -123,22 +179,78 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         - Langue: français
         - Niveau de créativité: ${params.creativity}
         
+        ${styleInstructions}
+        
         Le script doit être naturel, avec des pauses, des hésitations et des expressions conversationnelles françaises.
         La longueur du script doit être d'environ ${params.length} mots.
         
         IMPORTANT: Assure-toi que le podcast a une introduction claire et une conclusion appropriée. La conclusion doit résumer les points clés et remercier l'auditeur.
+        
+        RAPPEL: N'ajoute PAS de métadonnées, de titres ou d'autres éléments en dehors du format spécifié. Commence directement avec le premier dialogue.
         `;
         break;
       case 'en':
         systemPrompt = "You are an expert podcast creator. You must generate a natural and engaging podcast script in English.";
+        
+        // Définir les instructions spécifiques au style en anglais
+        let styleInstructionsEn = "";
+        switch (params.style) {
+          case 'conversational':
+            styleInstructionsEn = `
+            The style should be conversational and relaxed, like a discussion between friends.
+            - Use informal language and colloquial expressions
+            - Include spontaneous reactions and active listening cues
+            - Speakers can occasionally interrupt each other
+            - Add personal anecdotes and concrete examples
+            `;
+            break;
+          case 'debate':
+            styleInstructionsEn = `
+            The style should be that of a structured debate with different viewpoints.
+            - Speakers should present opposing or complementary arguments
+            - Include rhetorical questions and challenging perspectives
+            - Use a more formal tone and precise terminology
+            - Speakers should defend their positions with facts and examples
+            - Include some moments of respectful disagreement
+            `;
+            break;
+          case 'interview':
+            styleInstructionsEn = `
+            The style should be that of a professional interview.
+            - The first speaker (${params.firstSpeaker}) mainly asks questions
+            - The second speaker (${params.secondSpeaker}) is the expert who provides detailed answers
+            - Include follow-up and in-depth questions
+            - The tone should be professional but accessible
+            - The interviewer should guide the conversation in a structured way
+            `;
+            break;
+          case 'educational':
+            styleInstructionsEn = `
+            The style should be educational and explanatory.
+            - Present information in a clear and pedagogical manner
+            - Use metaphors and analogies to explain complex concepts
+            - Speakers should complement each other to deepen explanations
+            - Include regular summaries of important points
+            - The tone should be instructive but engaging
+            `;
+            break;
+          default:
+            styleInstructionsEn = "The style should be natural and engaging.";
+        }
+        
         userPrompt = `
         Generate a podcast script between two people on the following topic:
         
         ${contentToUse}
         
         Script format:
-        <Person1>First person's text</Person1>
-        <Person2>Second person's text</Person2>
+        IMPORTANT: Use ONLY this exact format for the script, without adding any metadata or additional information:
+        
+        <${params.firstSpeaker}>First speaker's text</${params.firstSpeaker}>
+        <${params.secondSpeaker}>Second speaker's text</${params.secondSpeaker}>
+        <${params.firstSpeaker}>First speaker's text</${params.firstSpeaker}>
+        
+        And so on. Do not add titles, descriptions, or other elements outside this format.
         
         Podcast details:
         - Podcast name: ${params.podcastName}
@@ -149,22 +261,78 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         - Language: English
         - Creativity level: ${params.creativity}
         
+        ${styleInstructionsEn}
+        
         The script should be natural, with pauses, hesitations, and conversational English expressions.
         The script length should be approximately ${params.length} words.
         
         IMPORTANT: Make sure the podcast has a clear introduction and a proper conclusion. The conclusion should summarize the key points and thank the listener.
+        
+        REMINDER: Do NOT add metadata, titles, or other elements outside the specified format. Start directly with the first dialogue.
         `;
         break;
       case 'es':
         systemPrompt = "Eres un experto creador de podcasts. Debes generar un guión de podcast natural y atractivo en español.";
+        
+        // Définir les instructions spécifiques au style en espagnol
+        let styleInstructionsEs = "";
+        switch (params.style) {
+          case 'conversational':
+            styleInstructionsEs = `
+            El estilo debe ser conversacional y relajado, como una charla entre amigos.
+            - Utiliza un lenguaje informal y expresiones coloquiales
+            - Incluye reacciones espontáneas y señales de escucha activa
+            - Los hablantes pueden interrumpirse ocasionalmente
+            - Añade anécdotas personales y ejemplos concretos
+            `;
+            break;
+          case 'debate':
+            styleInstructionsEs = `
+            El estilo debe ser el de un debate estructurado con diferentes puntos de vista.
+            - Los hablantes deben presentar argumentos opuestos o complementarios
+            - Incluye preguntas retóricas y perspectivas desafiantes
+            - Utiliza un tono más formal y una terminología precisa
+            - Los hablantes deben defender sus posiciones con hechos y ejemplos
+            - Incluye algunos momentos de desacuerdo respetuoso
+            `;
+            break;
+          case 'interview':
+            styleInstructionsEs = `
+            El estilo debe ser el de una entrevista profesional.
+            - El primer hablante (${params.firstSpeaker}) principalmente hace preguntas
+            - El segundo hablante (${params.secondSpeaker}) es el experto que proporciona respuestas detalladas
+            - Incluye preguntas de seguimiento y profundización
+            - El tono debe ser profesional pero accesible
+            - El entrevistador debe guiar la conversación de manera estructurada
+            `;
+            break;
+          case 'educational':
+            styleInstructionsEs = `
+            El estilo debe ser educativo y explicativo.
+            - Presenta la información de manera clara y pedagógica
+            - Utiliza metáforas y analogías para explicar conceptos complejos
+            - Los hablantes deben complementarse para profundizar en las explicaciones
+            - Incluye resúmenes regulares de los puntos importantes
+            - El tono debe ser instructivo pero atractivo
+            `;
+            break;
+          default:
+            styleInstructionsEs = "El estilo debe ser natural y atractivo.";
+        }
+        
         userPrompt = `
         Genera un guión de podcast entre dos personas sobre el siguiente tema:
         
         ${contentToUse}
         
         Formato del guión:
-        <Person1>Texto de la primera persona</Person1>
-        <Person2>Texto de la segunda persona</Person2>
+        IMPORTANTE: Utiliza ÚNICAMENTE este formato exacto para el guión, sin añadir metadatos o información adicional:
+        
+        <${params.firstSpeaker}>Texto del primer interlocutor</${params.firstSpeaker}>
+        <${params.secondSpeaker}>Texto del segundo interlocutor</${params.secondSpeaker}>
+        <${params.firstSpeaker}>Texto del primer interlocutor</${params.firstSpeaker}>
+        
+        Y así sucesivamente. No añadas títulos, descripciones u otros elementos fuera de este formato.
         
         Detalles del podcast:
         - Nombre del podcast: ${params.podcastName}
@@ -175,23 +343,79 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         - Idioma: español
         - Nivel de creatividad: ${params.creativity}
         
+        ${styleInstructionsEs}
+        
         El guión debe ser natural, con pausas, vacilaciones y expresiones conversacionales españolas.
         La longitud del guión debe ser de aproximadamente ${params.length} palabras.
         
         IMPORTANTE: Asegúrate de que el podcast tenga una introducción clara y una conclusión adecuada. La conclusión debe resumir los puntos clave y agradecer al oyente.
+        
+        RECORDATORIO: NO añadas metadatos, títulos u otros elementos fuera del formato especificado. Comienza directamente con el primer diálogo.
         `;
         break;
       default:
         // Pour les autres langues, utiliser l'anglais comme base et demander la traduction
         systemPrompt = `You are an expert podcast creator. You must generate a natural and engaging podcast script in ${params.language} language.`;
+        
+        // Définir les instructions spécifiques au style pour les autres langues
+        let styleInstructionsOther = "";
+        switch (params.style) {
+          case 'conversational':
+            styleInstructionsOther = `
+            The style should be conversational and relaxed, like a discussion between friends.
+            - Use informal language and colloquial expressions appropriate for ${params.language}
+            - Include spontaneous reactions and active listening cues
+            - Speakers can occasionally interrupt each other
+            - Add personal anecdotes and concrete examples
+            `;
+            break;
+          case 'debate':
+            styleInstructionsOther = `
+            The style should be that of a structured debate with different viewpoints.
+            - Speakers should present opposing or complementary arguments
+            - Include rhetorical questions and challenging perspectives
+            - Use a more formal tone and precise terminology
+            - Speakers should defend their positions with facts and examples
+            - Include some moments of respectful disagreement
+            `;
+            break;
+          case 'interview':
+            styleInstructionsOther = `
+            The style should be that of a professional interview.
+            - The first speaker (${params.firstSpeaker}) mainly asks questions
+            - The second speaker (${params.secondSpeaker}) is the expert who provides detailed answers
+            - Include follow-up and in-depth questions
+            - The tone should be professional but accessible
+            - The interviewer should guide the conversation in a structured way
+            `;
+            break;
+          case 'educational':
+            styleInstructionsOther = `
+            The style should be educational and explanatory.
+            - Present information in a clear and pedagogical manner
+            - Use metaphors and analogies to explain complex concepts
+            - Speakers should complement each other to deepen explanations
+            - Include regular summaries of important points
+            - The tone should be instructive but engaging
+            `;
+            break;
+          default:
+            styleInstructionsOther = "The style should be natural and engaging.";
+        }
+        
         userPrompt = `
         Generate a podcast script between two people on the following topic in ${params.language} language:
         
         ${contentToUse}
         
         Script format:
-        <Person1>First person's text</Person1>
-        <Person2>Second person's text</Person2>
+        IMPORTANT: Use ONLY this exact format for the script, without adding any metadata or additional information:
+        
+        <${params.firstSpeaker}>First speaker's text in ${params.language}</${params.firstSpeaker}>
+        <${params.secondSpeaker}>Second speaker's text in ${params.language}</${params.secondSpeaker}>
+        <${params.firstSpeaker}>First speaker's text in ${params.language}</${params.firstSpeaker}>
+        
+        And so on. Do not add titles, descriptions, or other elements outside this format.
         
         Podcast details:
         - Podcast name: ${params.podcastName}
@@ -202,10 +426,14 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         - Language: ${params.language}
         - Creativity level: ${params.creativity}
         
+        ${styleInstructionsOther}
+        
         The script should be natural, with pauses, hesitations, and conversational expressions in ${params.language}.
         The script length should be approximately ${params.length} words.
         
         IMPORTANT: Make sure the podcast has a clear introduction and a proper conclusion. The conclusion should summarize the key points and thank the listener.
+        
+        REMINDER: Do NOT add metadata, titles, or other elements outside the specified format. Start directly with the first dialogue.
         `;
     }
     
@@ -214,7 +442,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
     try {
       // Appeler l'API OpenAI pour générer la transcription
       const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: useGpt4 ? "gpt-4" : "gpt-3.5-turbo",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -291,7 +519,7 @@ async function generateTranscript(source: ContentSource, params: GenerationParam
         try {
           console.log("Nouvel essai avec contenu réduit...");
           const retryResponse = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
+            model: useGpt4 ? "gpt-4" : "gpt-3.5-turbo",
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: userPrompt }
@@ -737,7 +965,7 @@ async function generateElevenLabsAudio(transcript: string, params: GenerationPar
     // Nettoyer la transcription
     const cleanedTranscript = transcript
       .replace(/^#+ .*$/gm, '') // Supprimer les titres Markdown
-      .replace(/\*\*(.*?)\*\*/g, '$1') // Supprimer les textes en gras
+      .replace(/\*\*.*?\*\*/g, '$1') // Supprimer les textes en gras
       .replace(/^_.*_$/gm, '') // Supprimer les lignes soulignées
       .replace(/^\* /gm, '') // Supprimer les puces
       .replace(/^Tagline:.*$/gm, ''); // Supprimer les taglines
@@ -973,11 +1201,14 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
   // Nettoyer la transcription
   const cleanedTranscript = transcript
     .replace(/^#+\s+.*$/gm, '') // Supprimer les titres Markdown
-    .replace(/^\*\*.*\*\*$/gm, '') // Supprimer les lignes en gras
+    .replace(/\*\*.*?\*\*/g, '') // Supprimer les textes en gras
+    .replace(/^\*.*?\*.*$/gm, '') // Supprimer les lignes avec des métadonnées (comme *Nom du podcast:* etc.)
     .replace(/^_.*_$/gm, '') // Supprimer les lignes soulignées
     .replace(/\s*[-*]\s+/gm, '') // Supprimer les listes à puces
-    .replace(/\*\*.*?\*\*/g, '') // Supprimer le texte en gras
-    .replace(/\*Tagline:.*?\*/g, '') // Supprimer la tagline
+    .replace(/^Tagline:.*$/gm, '') // Supprimer la tagline
+    .replace(/^.*?:.*?:.*$/gm, '') // Supprimer les lignes avec des métadonnées (format Nom: Valeur)
+    .replace(/^---+$/gm, '') // Supprimer les séparateurs
+    .replace(/^\s*$/gm, '') // Supprimer les lignes vides
     .trim();
   
   console.log("Transcription nettoyée:", cleanedTranscript.substring(0, 200) + "...");
@@ -989,7 +1220,7 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
   
   // Format 1: <Person1>Texte</Person1>
   // Utiliser une regex compatible avec les anciennes versions de JS
-  const personRegex = /<(Person\d+|Présentateur|Expert)>([\s\S]*?)<\/\1>/g;
+  const personRegex = /<(Person\d+|Présentateur|Expert|.*?)>([\s\S]*?)<\/\1>/g;
   let personMatch;
   let personMatches = [];
   
@@ -1005,9 +1236,21 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
       const text = match[2].trim();
       
       if (text) {
-        const voice = speaker === "Person1" || speaker === params.firstSpeaker || speaker.includes("Présentateur") 
-          ? params.firstSpeakerVoice 
-          : params.secondSpeakerVoice;
+        // Déterminer la voix en fonction du locuteur
+        let voice;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes('person1') || 
+            speakerLower.includes(firstSpeakerLower) || 
+            firstSpeakerLower.includes(speakerLower)) {
+          voice = params.firstSpeakerVoice;
+        } else {
+          voice = params.secondSpeakerVoice;
+        }
         
         dialogues.push({ speaker, text, voice });
       }
@@ -1033,10 +1276,29 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
       const speaker = match[1].trim();
       const text = match[2].trim();
       
+      // Ignorer les métadonnées
+      if (speaker.toLowerCase().includes('podcast') || 
+          speaker.toLowerCase().includes('tagline') || 
+          speaker.toLowerCase().includes('style') || 
+          speaker.toLowerCase().includes('langue') ||
+          speaker.toLowerCase().includes('intervenant')) {
+        continue;
+      }
+      
       if (text) {
-        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
-          ? params.firstSpeakerVoice 
-          : params.secondSpeakerVoice;
+        // Déterminer la voix en fonction du locuteur
+        let voice;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes(firstSpeakerLower) || firstSpeakerLower.includes(speakerLower)) {
+          voice = params.firstSpeakerVoice;
+        } else {
+          voice = params.secondSpeakerVoice;
+        }
         
         dialogues.push({ speaker, text, voice });
       }
@@ -1062,10 +1324,29 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
       const speaker = match[1].trim();
       const text = match[2].trim();
       
+      // Ignorer les métadonnées
+      if (speaker.toLowerCase().includes('podcast') || 
+          speaker.toLowerCase().includes('tagline') || 
+          speaker.toLowerCase().includes('style') || 
+          speaker.toLowerCase().includes('langue') ||
+          speaker.toLowerCase().includes('intervenant')) {
+        continue;
+      }
+      
       if (text) {
-        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
-          ? params.firstSpeakerVoice 
-          : params.secondSpeakerVoice;
+        // Déterminer la voix en fonction du locuteur
+        let voice;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes(firstSpeakerLower) || firstSpeakerLower.includes(speakerLower)) {
+          voice = params.firstSpeakerVoice;
+        } else {
+          voice = params.secondSpeakerVoice;
+        }
         
         dialogues.push({ speaker, text, voice });
       }
@@ -1092,9 +1373,19 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
       const text = match[2].trim();
       
       if (text) {
-        const voice = speaker.toLowerCase().includes(params.firstSpeaker.toLowerCase()) 
-          ? params.firstSpeakerVoice 
-          : params.secondSpeakerVoice;
+        // Déterminer la voix en fonction du locuteur
+        let voice;
+        
+        // Vérifier si le dialogue contient le nom du premier ou du second intervenant
+        const speakerLower = speaker.toLowerCase();
+        const firstSpeakerLower = params.firstSpeaker.toLowerCase();
+        const secondSpeakerLower = params.secondSpeaker.toLowerCase();
+        
+        if (speakerLower.includes(firstSpeakerLower) || firstSpeakerLower.includes(speakerLower)) {
+          voice = params.firstSpeakerVoice;
+        } else {
+          voice = params.secondSpeakerVoice;
+        }
         
         dialogues.push({ speaker, text, voice });
       }
@@ -1115,6 +1406,15 @@ function extractDialogues(transcript: string, params: GenerationParams): { speak
   // Alterner les intervenants pour chaque ligne
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    
+    // Ignorer les lignes qui semblent être des métadonnées
+    if (line.toLowerCase().includes('podcast:') || 
+        line.toLowerCase().includes('tagline:') || 
+        line.toLowerCase().includes('style:') || 
+        line.toLowerCase().includes('langue:') ||
+        line.toLowerCase().includes('intervenant:')) {
+      continue;
+    }
     
     // Déterminer le locuteur en fonction de l'indice (pair/impair)
     const speaker = i % 2 === 0 ? params.firstSpeaker : params.secondSpeaker;
